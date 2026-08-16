@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { FormEvent, useMemo, useState } from 'react';
 
 type Station = {
   id: string;
@@ -24,7 +24,6 @@ const TOLL = {
   motorway: 'A6',
   distanceKm: 24,
   waitMin: 6,
-  trend: 'stable',
 };
 
 function score(station: Station) {
@@ -42,11 +41,17 @@ export default function Home() {
   const [locating, setLocating] = useState(false);
   const [fuel, setFuel] = useState('Gazole');
   const [queueStation, setQueueStation] = useState<string | null>(null);
+  const [origin, setOrigin] = useState('Paris');
+  const [destination, setDestination] = useState('Lyon');
+  const [draftOrigin, setDraftOrigin] = useState(origin);
+  const [draftDestination, setDraftDestination] = useState(destination);
+  const [editingRoute, setEditingRoute] = useState(false);
 
   const ranked = useMemo(() => [...STATIONS].sort((a, b) => score(a) - score(b)), []);
   const best = ranked[0];
   const nearest = [...STATIONS].sort((a, b) => a.distanceKm - b.distanceKm)[0];
   const saved = Math.max(0, nearest.waitMin + nearest.detourMin - best.waitMin - best.detourMin);
+  const totalObservedDelay = TOLL.waitMin + STATIONS.reduce((sum, station) => sum + station.waitMin, 0);
 
   function locate() {
     setLocating(true);
@@ -68,6 +73,14 @@ export default function Home() {
     );
   }
 
+  function saveRoute(event: FormEvent) {
+    event.preventDefault();
+    if (!draftOrigin.trim() || !draftDestination.trim()) return;
+    setOrigin(draftOrigin.trim());
+    setDestination(draftDestination.trim());
+    setEditingRoute(false);
+  }
+
   return (
     <main className="appShell">
       <header className="brandBar">
@@ -79,10 +92,17 @@ export default function Home() {
 
       <section className="routeHeader">
         <div>
-          <div className="routeLabel">PARIS → LYON</div>
+          <div className="routeLabel">{origin.toUpperCase()} → {destination.toUpperCase()}</div>
           <div className="routeSub">via A6 · itinéraire actif</div>
         </div>
-        <button className="ghostButton">Modifier</button>
+        <button className="ghostButton" onClick={() => setEditingRoute(true)}>Modifier</button>
+      </section>
+
+      <section className="tripSummary">
+        <div><span>TRAJET</span><strong>≈ 4 h 28</strong><small>temps de référence démo</small></div>
+        <div><span>POINTS SENSIBLES</span><strong>5</strong><small>4 stations + 1 péage</small></div>
+        <div><span>TEMPS OBSERVÉ</span><strong>+{totalObservedDelay} min</strong><small>démo, non cumul optimisé</small></div>
+        <div className="summaryGain"><span>GAIN FLOWAY</span><strong>≈ {saved} min</strong><small>sur l’arrêt carburant</small></div>
       </section>
 
       <section className="mapPanel">
@@ -187,6 +207,22 @@ export default function Home() {
         <button>◉<span>Communauté</span></button>
         <button>○<span>Profil</span></button>
       </nav>
+
+      {editingRoute && (
+        <div className="modalBackdrop" onClick={() => setEditingRoute(false)}>
+          <form className="routeModal" onSubmit={saveRoute} onClick={(e) => e.stopPropagation()}>
+            <span className="miniLabel">NOUVEL ITINÉRAIRE</span>
+            <h2>Où va-t-on ?</h2>
+            <label>Départ<input value={draftOrigin} onChange={(e) => setDraftOrigin(e.target.value)} /></label>
+            <label>Destination<input value={draftDestination} onChange={(e) => setDraftDestination(e.target.value)} /></label>
+            <div className="modalActions">
+              <button type="button" className="ghostButton" onClick={() => setEditingRoute(false)}>Annuler</button>
+              <button type="submit" className="cta">CALCULER LE TRAJET →</button>
+            </div>
+            <small>Prototype : le prochain jalon branchera ces champs sur un moteur de routage réel.</small>
+          </form>
+        </div>
+      )}
     </main>
   );
 }
