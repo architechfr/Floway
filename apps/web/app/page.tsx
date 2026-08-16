@@ -38,6 +38,12 @@ function formatDuration(totalMinutes: number) {
   return h ? `${h} h ${String(m).padStart(2, '0')}` : `${m} min`;
 }
 
+function pausePlan(durationMin: number) {
+  const count = Math.max(0, Math.floor((durationMin - 1) / 120));
+  const pauseMinutes = count * 15;
+  return { count, pauseMinutes, totalMinutes: durationMin + pauseMinutes };
+}
+
 function tone(wait: number) {
   if (wait <= 5) return 'good';
   if (wait <= 8) return 'medium';
@@ -95,6 +101,7 @@ export default function Home() {
   const nearest = useMemo(() => [...(routeData?.stations || [])].sort((a, b) => a.distanceKm - b.distanceKm)[0], [routeData]);
   const saved = best && nearest ? Math.max(0, nearest.waitMin + nearest.detourMin - best.waitMin - best.detourMin) : 0;
   const routeStations = (routeData?.stations || []).slice(0, 4);
+  const breaks = routeData ? pausePlan(routeData.durationMin) : null;
 
   async function submitRoute(e: FormEvent) {
     e.preventDefault();
@@ -122,21 +129,22 @@ export default function Home() {
         <div>
           <small>ITINÉRAIRE ACTIF</small>
           <h1>{origin.split(',')[0]} <span>→</span> {destination.split(',')[0]}</h1>
-          <p>{routeData ? `${routeData.distanceKm} km · ${formatDuration(routeData.durationMin)}` : 'Calcul en cours…'}</p>
+          <p>{routeData ? `${routeData.distanceKm} km · ${formatDuration(routeData.durationMin)} de conduite estimée` : 'Calcul en cours…'}</p>
+          {routeData && <p className="durationDisclaimer">Hors pauses · ETA trafic temps réel non appliqué</p>}
         </div>
         <button className="editButton" onClick={() => setEditing(true)}>✎ Modifier</button>
       </section>
 
       <section className="metricsGrid">
-        <div><span>TRAJET</span><strong>{routeData ? formatDuration(routeData.durationMin) : '—'}</strong><small>{routeData ? `${routeData.distanceKm} km` : 'analyse'}</small></div>
-        <div><span>STATIONS</span><strong>{routeData?.stations.length ?? '—'}</strong><small>données officielles</small></div>
-        <div><span>TRAFIC</span><strong className="live">{traffic?.connected ? 'LIVE' : 'PARTIEL'}</strong><small>Bison Futé</small></div>
-        <div className="gain"><span>GAIN</span><strong>≈ {saved} min</strong><small>potentiel</small></div>
+        <div><span>CONDUITE</span><strong>{routeData ? formatDuration(routeData.durationMin) : '—'}</strong><small>modèle routier OSRM</small></div>
+        <div><span>PAUSES</span><strong>{breaks ? `+ ${breaks.pauseMinutes} min` : '—'}</strong><small>{breaks ? `${breaks.count} pause${breaks.count > 1 ? 's' : ''} × 15 min` : 'conseil Floway'}</small></div>
+        <div><span>VOYAGE FLOWAY</span><strong>{breaks ? formatDuration(breaks.totalMinutes) : '—'}</strong><small>conduite + pauses</small></div>
+        <div className="gain"><span>GAIN</span><strong>≈ {saved} min</strong><small>sur les arrêts optimisés</small></div>
       </section>
 
       <section className="trafficCard">
         <div><small>SIGNAL ROUTIER</small><strong>Trafic public {traffic?.connected ? 'connecté' : 'en cours de connexion'}</strong><span>Vitesses, débits et événements selon couverture disponible</span></div>
-        <div className="trafficState"><b>{traffic?.traffic?.available ? 'ACTIF' : 'PARTIEL'}</b><span>{traffic?.traffic?.expectedRefresh || '1–6 min'}</span></div>
+        <div className="trafficState"><b>{traffic?.traffic?.available ? 'ACTIF' : 'PARTIEL'}</b><span>{traffic?.traffic?.expectedRefresh || '1–6 min'}</span><em>non appliqué à l’ETA</em></div>
       </section>
 
       {error && <div className="errorBox">{error}</div>}
@@ -162,6 +170,13 @@ export default function Home() {
           <button className="gpsButton" aria-label="Position">➤</button>
         </div>
       </section>
+
+      {breaks && breaks.count > 0 && (
+        <section className="pauseCard">
+          <div><small>PLAN DE PAUSES FLOWAY</small><strong>{breaks.count} pauses conseillées</strong><span>Une pause de 15 min environ toutes les 2 h de conduite.</span></div>
+          <div><b>+{breaks.pauseMinutes}</b><span>MIN</span></div>
+        </section>
+      )}
 
       {best && (
         <section className="recommendation">
