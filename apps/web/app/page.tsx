@@ -36,6 +36,8 @@ type TrafficStatus = {
   limitations?: string[];
 };
 
+type Tab = 'route' | 'stations' | 'community' | 'profile';
+
 function score(station: Station) {
   return station.waitMin + station.detourMin + station.price * 2;
 }
@@ -58,6 +60,16 @@ function formatFreshness(value?: string | null) {
   return Number.isNaN(date.getTime()) ? 'publication détectée' : date.toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 }
 
+function serviceIcon(service: string) {
+  const s = service.toLowerCase();
+  if (s.includes('toilet')) return 'WC';
+  if (s.includes('rest')) return '☕';
+  if (s.includes('wifi')) return '⌁';
+  if (s.includes('boutique')) return '▣';
+  if (s.includes('lavage')) return '◫';
+  return '•';
+}
+
 export default function Home() {
   const [position, setPosition] = useState('Position non activée');
   const [locating, setLocating] = useState(false);
@@ -72,6 +84,8 @@ export default function Home() {
   const [routeError, setRouteError] = useState('');
   const [routeData, setRouteData] = useState<RouteData | null>(null);
   const [trafficStatus, setTrafficStatus] = useState<TrafficStatus | null>(null);
+  const [selectedStation, setSelectedStation] = useState<Station | null>(null);
+  const [activeTab, setActiveTab] = useState<Tab>('route');
 
   async function calculateRoute(from: string, to: string, selectedFuel = fuel) {
     setRouteLoading(true);
@@ -151,131 +165,131 @@ export default function Home() {
     await calculateRoute(origin, destination, nextFuel);
   }
 
+  function goTab(tab: Tab) {
+    setActiveTab(tab);
+    const id = tab === 'route' ? 'route-top' : tab === 'stations' ? 'stations-section' : tab === 'community' ? 'community-section' : 'profile-section';
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
   return (
     <main className="appShell">
+      <div id="route-top" />
       <header className="brandBar">
-        <div className="wing wingLeft" />
+        <div className="brandWing leftWing"><i /><i /><i /></div>
         <div className="logoWord">FLOWAY</div>
-        <div className="wing wingRight" />
+        <div className="brandWing rightWing"><i /><i /><i /></div>
         <div className="subtitle">Le meilleur arrêt sur votre route</div>
       </header>
 
       <section className="routeHeader">
         <div>
           <div className="routeLabel">{origin.toUpperCase()} → {destination.toUpperCase()}</div>
-          <div className="routeSub">itinéraire + stations + prix réels</div>
+          <div className="routeSub">itinéraire réel · optimisation Floway</div>
         </div>
-        <button className="ghostButton" onClick={() => setEditingRoute(true)}>Modifier</button>
+        <button className="ghostButton" onClick={() => setEditingRoute(true)}>✎ Modifier</button>
       </section>
 
       <section className="tripSummary">
-        <div><span>TRAJET RÉEL</span><strong>{routeData ? formatDuration(routeData.durationMin) : '—'}</strong><small>{routeData ? `${routeData.distanceKm} km` : 'calcul en cours'}</small></div>
-        <div><span>STATIONS SUR ROUTE</span><strong>{routeData?.stations.length ?? '—'}</strong><small>flux officiel État</small></div>
-        <div><span>TRAFIC OFFICIEL</span><strong>{trafficStatus?.connected ? 'CONNECTÉ' : 'EN ATTENTE'}</strong><small>{trafficStatus?.traffic?.available ? 'Bison Futé actif' : 'couverture à vérifier'}</small></div>
-        <div className="summaryGain"><span>GAIN FLOWAY</span><strong>{best ? `≈ ${saved} min` : '—'}</strong><small>vs prochain arrêt détecté</small></div>
-      </section>
-
-      <section className="routeProviderStrip">
-        <span>{routeLoading ? 'FLOWAY ANALYSE LA ROUTE…' : 'DONNÉES RÉELLES + ESTIMATION IA'}</span>
-        <strong>{routeData ? `${routeData.distanceKm} km · ${formatDuration(routeData.durationMin)} · ${routeData.stations.length} stations` : 'Calcul en cours'}</strong>
-        <small>{routeData ? `${routeData.providers.routing} · ${routeData.providers.fuel} · attente : ${routeData.providers.ai}` : 'Géocodage, routage et recherche des stations…'}</small>
+        <div><span>TRAJET</span><strong>{routeData ? formatDuration(routeData.durationMin) : '—'}</strong><small>{routeData ? `${routeData.distanceKm} km` : 'analyse'}</small></div>
+        <div><span>STATIONS</span><strong>{routeData?.stations.length ?? '—'}</strong><small>données officielles</small></div>
+        <div><span>TRAFIC</span><strong>{trafficStatus?.connected ? 'LIVE' : '—'}</strong><small>Bison Futé</small></div>
+        <div className="summaryGain"><span>GAIN</span><strong>{best ? `≈ ${saved} min` : '—'}</strong><small>potentiel</small></div>
       </section>
 
       <section className={`trafficLiveCard ${trafficStatus?.connected ? 'connected' : ''}`}>
-        <div>
-          <span className="miniLabel">TRAFIC PUBLIC TEMPS RÉEL</span>
-          <h2>{trafficStatus?.connected ? 'Bison Futé connecté' : 'Connexion Bison Futé'}</h2>
-          <p>{trafficStatus?.traffic?.scope || 'Vérification des flux trafic et événements routiers.'}</p>
-        </div>
-        <div className="trafficLiveMeta">
-          <strong>{trafficStatus?.traffic?.available ? 'ACTIF' : 'PARTIEL'}</strong>
-          <span>{trafficStatus?.traffic?.expectedRefresh || '1–6 min'}</span>
-          <small>{formatFreshness(trafficStatus?.traffic?.latestPublicationSeen)}</small>
-        </div>
+        <div><span className="miniLabel">SIGNAL ROUTIER</span><h2>{trafficStatus?.connected ? 'Trafic public connecté' : 'Connexion trafic'}</h2><p>{trafficStatus?.traffic?.scope || 'Analyse des flux et événements publics.'}</p></div>
+        <div className="trafficLiveMeta"><strong>{trafficStatus?.traffic?.available ? 'ACTIF' : 'PARTIEL'}</strong><span>{trafficStatus?.traffic?.expectedRefresh || '1–6 min'}</span><small>{formatFreshness(trafficStatus?.traffic?.latestPublicationSeen)}</small></div>
       </section>
-      {trafficStatus?.limitations?.[0] && <div className="coverageNote">Couverture actuelle : {trafficStatus.limitations[0]}</div>}
 
       {routeError && <div className="routeError routeErrorMain">{routeError}</div>}
 
       <section className="mapPanel">
-        <div className="savedBadge"><strong>{best ? `${saved} MIN` : 'IA'}</strong><span>{best ? 'POTENTIEL' : 'ANALYSE'}</span></div>
+        <div className="mapTexture" />
+        <div className="savedBadge"><strong>{best ? `${saved} MIN` : 'IA'}</strong><span>GAGNÉES</span></div>
         <div className="routeLine" />
         {displayedStations.map((station, index) => {
           const isBest = station.id === best?.id;
           return (
-            <div className={`routeStop stop${index + 1} ${isBest ? 'routeBest' : ''}`} key={station.id}>
+            <button className={`routeStop stop${index + 1} ${isBest ? 'routeBest' : ''}`} key={station.id} onClick={() => setSelectedStation(station)}>
               <div className={`routeDot ${tone(station.waitMin)}`} />
-              <div className="routeCopy">
-                <strong>{station.waitMin} min IA</strong>
-                <span>{station.city || station.name}</span>
-                <small>{station.distanceKm} km · {station.price.toFixed(3)} €/L</small>
-              </div>
-            </div>
+              <div className="routeCopy"><strong>{station.waitMin} min</strong><span>{station.city || station.name}</span><small>{station.distanceKm} km</small></div>
+            </button>
           );
         })}
-        <button className="locationFab" onClick={locate} disabled={locating}>⌖</button>
+        <button className="locationFab" onClick={locate} disabled={locating}>➤</button>
       </section>
-
-      {nearest && (
-        <section className="routeInsight">
-          <div><span>PROCHAINE STATION RÉELLE</span><strong>{nearest.city || nearest.name}</strong><small>dans {nearest.distanceKm} km · à {nearest.routeOffsetKm} km de la route</small></div>
-          <div className="tollTime"><b>{nearest.waitMin}</b><span>MIN</span><small>ESTIMATION IA</small></div>
-        </section>
-      )}
 
       {best ? (
         <section className="bestCard">
-          <div className="cardTopline"><span>RECOMMANDATION FLOWAY</span><b>≈ {saved} MIN DE POTENTIEL</b></div>
+          <div className="cardTopline"><span>MEILLEUR ARRÊT</span><b>≈ {saved} MIN GAGNÉES</b></div>
           <h1>{best.city ? `STATION ${best.city.toUpperCase()}` : best.name.toUpperCase()}</h1>
           <p>{best.address} · dans {best.distanceKm} km</p>
           <div className="dataGrid">
             <div><span>ATTENTE IA</span><strong className="greenText">{best.waitMin} min</strong></div>
             <div><span>PRIX OFFICIEL</span><strong>{best.price.toFixed(3)} €/L</strong></div>
-            <div><span>DÉTOUR EST.</span><strong className="orangeText">+{best.detourMin} min</strong></div>
+            <div><span>DÉTOUR</span><strong className="orangeText">+{best.detourMin} min</strong></div>
           </div>
-          <div className="sourceStrip"><span>Confiance IA</span><strong>{best.waitModel.confidence}</strong><em>Prix : flux officiel</em></div>
-          <div className="aiExplain"><b>Pourquoi Floway la recommande</b>{best.waitModel.factors.map((factor) => <span key={factor}>• {factor}</span>)}</div>
-          <button className="cta">CHOISIR CET ARRÊT <span>→</span></button>
+          <div className="confidenceLine"><span>CONFIANCE IA</span><div className="confidenceDots"><i /><i /><i /><i /><i /></div><b>{best.waitModel.confidence}</b></div>
+          <button className="cta" onClick={() => setSelectedStation(best)}>VOIR LE DÉTAIL <span>›</span></button>
         </section>
       ) : !routeLoading && (
         <section className="bestCard"><div className="cardTopline"><span>ANALYSE FLOWAY</span></div><h1>AUCUNE STATION ÉLIGIBLE</h1><p>Aucune station avec prix {fuel} n’a été identifiée à proximité immédiate de cet itinéraire.</p></section>
       )}
 
-      <section className="compareSection">
-        <div className="sectionHead">
-          <div><span className="miniLabel">STATIONS RÉELLES SUR L’ITINÉRAIRE</span><h2>Comparatif Floway</h2></div>
-          <select value={fuel} onChange={(e) => void changeFuel(e.target.value)} disabled={routeLoading}>
-            <option>Gazole</option><option>SP95-E10</option><option>SP98</option><option>E85</option>
-          </select>
-        </div>
-
+      <section id="stations-section" className="compareSection">
+        <div className="sectionHead"><div><span className="miniLabel">PROCHAINES STATIONS</span><h2>Comparatif Floway</h2></div><select value={fuel} onChange={(e) => void changeFuel(e.target.value)} disabled={routeLoading}><option>Gazole</option><option>SP95-E10</option><option>SP98</option><option>E85</option></select></div>
         <div className="stationStack">
           {ranked.slice(0, 10).map((station) => (
             <article className={`retroCard ${tone(station.waitMin)}Border`} key={station.id}>
-              <div className="retroCardHead"><div className={`pumpIcon ${tone(station.waitMin)}`}>⛽</div><div><span className="miniLabel">{station.waitModel.label}</span><h3>{station.city ? station.city.toUpperCase() : station.name.toUpperCase()}</h3><p>{station.address} · {station.distanceKm} km sur le trajet</p></div></div>
-              <div className="retroStats">
-                <div><span>ATTENTE IA</span><strong>{station.waitMin} min</strong></div>
-                <div><span>PRIX OFFICIEL</span><strong>{station.price.toFixed(3)} €/L</strong></div>
-                <div><span>DÉTOUR EST.</span><strong>+{station.detourMin} min</strong></div>
-              </div>
-              <div className="dataSource">{station.sources.station} · {station.sources.priceFreshness} · confiance IA {station.waitModel.confidence}</div>
-              <button className={queueStation === station.id ? 'queueButton active' : 'queueButton'} onClick={() => setQueueStation(queueStation === station.id ? null : station.id)}>
-                {queueStation === station.id ? '✓ PRÉSENCE SIGNALÉE — TERMINER' : 'JE SUIS DANS LA FILE'}
+              <button className="stationMainButton" onClick={() => setSelectedStation(station)}>
+                <div className="retroCardHead"><div className={`pumpIcon ${tone(station.waitMin)}`}>⛽</div><div><span className="miniLabel">{station.id === best?.id ? 'RECOMMANDÉ' : station.waitModel.label}</span><h3>{station.city ? station.city.toUpperCase() : station.name.toUpperCase()}</h3><p>{station.address} · {station.distanceKm} km</p></div><span className="stationChevron">›</span></div>
+                <div className="retroStats"><div><span>ATTENTE</span><strong>{station.waitMin} min</strong></div><div><span>PRIX</span><strong>{station.price.toFixed(3)} €/L</strong></div><div><span>DÉTOUR</span><strong>+{station.detourMin} min</strong></div></div>
               </button>
+              <div className="queueRow"><button className={queueStation === station.id ? 'queueButton active' : 'queueButton'} onClick={() => setQueueStation(queueStation === station.id ? null : station.id)}>{queueStation === station.id ? '✓ PRÉSENCE SIGNALÉE' : 'JE SUIS DANS LA FILE'}</button><span className="crowdCount">◉ {Math.max(12, Math.round(28 + station.waitMin * 6))}</span></div>
             </article>
           ))}
         </div>
       </section>
 
-      {best && (
-        <section className="splitPanel">
-          <div><span>ESTIMATION FLOWAY</span><div className="splitDigits"><b>{String(best.waitMin).padStart(2, '0')[0]}</b><b>{String(best.waitMin).padStart(2, '0')[1]}</b><em>MIN</em></div></div>
-          <div className="flowState"><strong>{tone(best.waitMin) === 'good' ? 'FLUIDE' : tone(best.waitMin) === 'medium' ? 'MODÉRÉ' : 'CHARGÉ'}</strong><div>● ● ● ○ ○</div><small>Modèle v0 · trafic Bison Futé en cours d’intégration au score</small></div>
-        </section>
-      )}
+      <section id="community-section" className="communityPanel">
+        <span className="miniLabel">COMMUNAUTÉ FLOWAY</span>
+        <h2>Le trafic devient plus intelligent avec chaque conducteur.</h2>
+        <div className="communityGrid"><div><strong>Présence</strong><span>Détecter les files</span></div><div><strong>Sortie</strong><span>Mesurer la durée</span></div><div><strong>IA</strong><span>Prédire l’attente</span></div></div>
+      </section>
+
+      <section id="profile-section" className="profilePanel">
+        <span className="miniLabel">PROFIL CONDUCTEUR</span><h2>Préférences de trajet</h2><div className="profilePills"><span>{fuel}</span><span>Temps prioritaire</span><span>Autoroute</span></div>
+      </section>
 
       <div className="positionNote">{position} · {fuel}</div>
-      <nav className="bottomNav"><button className="activeNav">⌁<span>Route</span></button><button>⛽<span>Stations</span></button><button>◉<span>Communauté</span></button><button>○<span>Profil</span></button></nav>
+      <nav className="bottomNav">
+        <button className={activeTab === 'route' ? 'activeNav' : ''} onClick={() => goTab('route')}>⌁<span>Route</span></button>
+        <button className={activeTab === 'stations' ? 'activeNav' : ''} onClick={() => goTab('stations')}>⛽<span>Stations</span></button>
+        <button className={activeTab === 'community' ? 'activeNav' : ''} onClick={() => goTab('community')}>◉<span>Communauté</span></button>
+        <button className={activeTab === 'profile' ? 'activeNav' : ''} onClick={() => goTab('profile')}>○<span>Profil</span></button>
+      </nav>
+
+      {selectedStation && (
+        <div className="stationDetailBackdrop" onClick={() => setSelectedStation(null)}>
+          <section className="stationDetail" onClick={(e) => e.stopPropagation()}>
+            <div className="detailHero">
+              <button className="detailBack" onClick={() => setSelectedStation(null)}>←</button><button className="detailStar">☆</button>
+              <span className="miniLabel">STATION</span><h2>{selectedStation.city?.toUpperCase() || selectedStation.name.toUpperCase()}</h2><p>{selectedStation.address}</p>
+              <div className="detailBadges"><span>RECOMMANDÉ</span><b>≈ {saved} MIN GAGNÉES</b></div>
+            </div>
+            <div className="stationIllustration"><div className="sunGlow" /><div className="canopy" /><div className="pumpOne">⛽</div><div className="pumpTwo">⛽</div><div className="roadStripe" /></div>
+            <div className="detailQuickActions"><button>➤<span>ITINÉRAIRE</span></button><button>⛽<span>PRIX</span></button><button>ⓘ<span>INFOS</span></button></div>
+            <div className="detailMetrics">
+              <div className="retroWait"><span>ATTENTE ESTIMÉE</span><strong>{String(selectedStation.waitMin).padStart(2, '0')}</strong><em>MIN</em></div>
+              <div className="detailFlow"><span>{tone(selectedStation.waitMin) === 'good' ? 'FLUIDE' : tone(selectedStation.waitMin) === 'medium' ? 'MODÉRÉ' : 'CHARGÉ'}</span><div className="confidenceDots"><i /><i /><i /><i /><i /></div><small>Confiance {selectedStation.waitModel.confidence}</small></div>
+            </div>
+            <div className="detailFuel"><span>CARBURANT</span><div className="fuelGrid"><div className="selectedFuel"><small>{fuel}</small><strong>{selectedStation.price.toFixed(3)} €</strong></div><div><small>Distance</small><strong>{selectedStation.distanceKm} km</strong></div><div><small>Détour</small><strong>+{selectedStation.detourMin} min</strong></div></div></div>
+            <div className="detailServices"><span>SERVICES DISPONIBLES</span><div>{(selectedStation.services.length ? selectedStation.services : ['Toilettes','Restauration','Boutique','Wifi']).slice(0,6).map((service) => <i key={service} title={service}>{serviceIcon(service)}</i>)}</div></div>
+            <div className="aiExplain detailExplain"><b>POURQUOI FLOWAY LA RECOMMANDE</b>{selectedStation.waitModel.factors.map((factor) => <span key={factor}>• {factor}</span>)}</div>
+            <button className="cta detailCta">CHOISIR CET ARRÊT <span>›</span></button>
+          </section>
+        </div>
+      )}
 
       {editingRoute && (
         <div className="modalBackdrop" onClick={() => !routeLoading && setEditingRoute(false)}>
@@ -285,7 +299,7 @@ export default function Home() {
             <label>Destination<input value={draftDestination} onChange={(e) => setDraftDestination(e.target.value)} disabled={routeLoading} /></label>
             {routeError && <div className="routeError">{routeError}</div>}
             <div className="modalActions"><button type="button" className="ghostButton" onClick={() => setEditingRoute(false)} disabled={routeLoading}>Annuler</button><button type="submit" className="cta" disabled={routeLoading}>{routeLoading ? 'FLOWAY ANALYSE…' : 'ANALYSER LE TRAJET →'}</button></div>
-            <small>Trajet et stations réels. Prix officiels. Flux Bison Futé surveillés. L’attente reste une estimation Floway explicitement identifiée jusqu’à calibration communautaire.</small>
+            <small>Trajet et stations réels. Prix officiels. L’attente est une estimation Floway enrichie par les signaux trafic disponibles.</small>
           </form>
         </div>
       )}
