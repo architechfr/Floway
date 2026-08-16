@@ -1,10 +1,9 @@
 import type { Metadata } from 'next';
 import './globals.css';
-import './details.css';
 
 export const metadata: Metadata = {
   title: 'Floway — Le meilleur arrêt sur votre route',
-  description: 'Comparez les prochaines stations selon la distance, le prix et l’attente estimée.',
+  description: 'Assistant d’itinéraire intelligent : stations, prix, trafic et estimation d’attente.',
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
