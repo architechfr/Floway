@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import './details.css';
 
 export const metadata: Metadata = {
   title: 'Floway — Le meilleur arrêt sur votre route',
