@@ -32,7 +32,7 @@ function haversineKm(a: Point, b: Point) {
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 
-function sampleGeometry(coords: Point[], max = 10) {
+function sampleGeometry(coords: Point[], max = 14) {
   if (coords.length <= max) return coords;
   return Array.from({ length: max }, (_, i) => coords[Math.round(i * (coords.length - 1) / (max - 1))]);
 }
@@ -68,12 +68,25 @@ function parsePrice(record: FuelRecord, fuel: string) {
   return null;
 }
 
+function serviceCategories(services: string[]) {
+  const haystack = services.join(' ').toLowerCase();
+  const categories: string[] = [];
+  if (/restaur|sandwich|repas|fast.?food|snack/.test(haystack)) categories.push('Restauration');
+  if (/cafe|café|boisson|bar/.test(haystack)) categories.push('Café');
+  if (/boutique|shop|magasin|épicer|epicer/.test(haystack)) categories.push('Boutique');
+  if (/toilet|sanitaire|wc/.test(haystack)) categories.push('Toilettes');
+  if (/douche/.test(haystack)) categories.push('Douches');
+  if (/wifi|wi-fi/.test(haystack)) categories.push('Wi-Fi');
+  if (/borne|recharge|électrique|electrique/.test(haystack)) categories.push('Recharge VE');
+  return categories;
+}
+
 async function fetchFuelStations(routeCoords: Point[], fuel: string) {
-  const samples = sampleGeometry(routeCoords, 10);
+  const samples = sampleGeometry(routeCoords, 14);
   const responses = await Promise.all(samples.map(async ([lon, lat]) => {
     const url = new URL(FUEL_API);
     url.searchParams.set('limit', '50');
-    url.searchParams.set('where', `within_distance(geom, geom'POINT(${lon} ${lat})', 25 km)`);
+    url.searchParams.set('where', `within_distance(geom, geom'POINT(${lon} ${lat})', 28 km)`);
     const response = await fetch(url, { headers: { Accept: 'application/json' }, next: { revalidate: 600 } });
     if (!response.ok) return [] as FuelRecord[];
     const data = await response.json() as { results?: FuelRecord[] };
@@ -109,9 +122,10 @@ async function fetchFuelStations(routeCoords: Point[], fuel: string) {
 
   return enriched
     .sort((a, b) => a.distanceKm - b.distanceKm)
-    .slice(0, 18)
+    .slice(0, 60)
     .map((item, index) => {
-      const services = String(item.record.services || '').split(/[,;|]/).filter(Boolean);
+      const services = String(item.record.services || '').split(/[,;|]/).map(s => s.trim()).filter(Boolean);
+      const categories = serviceCategories(services);
       const arrivalHour = (now.getHours() + Math.round(item.distanceKm / 90)) % 24;
       const peak = (arrivalHour >= 7 && arrivalHour <= 9) || (arrivalHour >= 17 && arrivalHour <= 19) ? 2 : 0;
       const lunch = arrivalHour >= 11 && arrivalHour <= 14 ? 1 : 0;
@@ -134,7 +148,9 @@ async function fetchFuelStations(routeCoords: Point[], fuel: string) {
         detourMin,
         lat: item.point[1],
         lon: item.point[0],
-        services: services.slice(0, 8),
+        services: services.slice(0, 12),
+        serviceCategories: categories,
+        arrivalHour,
         waitModel: {
           label: 'Estimation IA Floway',
           confidence: services.length >= 4 ? 'moyenne' : 'exploratoire',
