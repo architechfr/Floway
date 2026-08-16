@@ -12,31 +12,32 @@ type Station = {
   detourMin: number;
 };
 
-const DEMO_STATIONS: Station[] = [
-  { id: '1', name: 'Aire de Villabé', motorway: 'A6', distanceKm: 12, price: 1.919, waitMin: 18, detourMin: 1 },
-  { id: '2', name: 'Aire de Nemours', motorway: 'A6', distanceKm: 31, price: 1.889, waitMin: 4, detourMin: 2 },
-  { id: '3', name: 'Aire de Darvault', motorway: 'A6', distanceKm: 47, price: 1.899, waitMin: 8, detourMin: 2 },
+const STATIONS: Station[] = [
+  { id: '1', name: 'Villabé', motorway: 'A6', distanceKm: 12, price: 1.919, waitMin: 18, detourMin: 1 },
+  { id: '2', name: 'Nemours', motorway: 'A6', distanceKm: 31, price: 1.889, waitMin: 4, detourMin: 2 },
+  { id: '3', name: 'Darvault', motorway: 'A6', distanceKm: 47, price: 1.899, waitMin: 8, detourMin: 3 },
+  { id: '4', name: 'Courtenay', motorway: 'A6', distanceKm: 76, price: 1.909, waitMin: 12, detourMin: 2 },
 ];
 
 function score(station: Station) {
   return station.waitMin + station.detourMin + Math.max(0, station.price - 1.889) * 100;
 }
 
-function waitLabel(minutes: number) {
-  if (minutes <= 5) return { label: 'Fluide', className: 'good' };
-  if (minutes <= 12) return { label: 'Modéré', className: 'medium' };
-  return { label: 'Chargé', className: 'bad' };
+function tone(minutes: number) {
+  if (minutes <= 5) return 'good';
+  if (minutes <= 12) return 'medium';
+  return 'bad';
 }
 
 export default function Home() {
-  const [position, setPosition] = useState<string>('Position non activée');
+  const [position, setPosition] = useState('Position non activée');
   const [locating, setLocating] = useState(false);
-  const [queueStation, setQueueStation] = useState<string | null>(null);
   const [fuel, setFuel] = useState('Gazole');
+  const [queueStation, setQueueStation] = useState<string | null>(null);
 
-  const ranked = useMemo(() => [...DEMO_STATIONS].sort((a, b) => score(a) - score(b)), []);
+  const ranked = useMemo(() => [...STATIONS].sort((a, b) => score(a) - score(b)), []);
   const best = ranked[0];
-  const nearest = [...DEMO_STATIONS].sort((a, b) => a.distanceKm - b.distanceKm)[0];
+  const nearest = [...STATIONS].sort((a, b) => a.distanceKm - b.distanceKm)[0];
   const saved = Math.max(0, nearest.waitMin + nearest.detourMin - best.waitMin - best.detourMin);
 
   function locate() {
@@ -60,91 +61,113 @@ export default function Home() {
   }
 
   return (
-    <main className="shell">
-      <header className="topbar">
-        <div className="brandMark">F</div>
-        <div>
-          <div className="brand">Floway</div>
-          <div className="tagline">Le meilleur arrêt sur votre route</div>
-        </div>
-        <span className="demoBadge">Prototype</span>
+    <main className="appShell">
+      <header className="brandBar">
+        <div className="wing wingLeft" />
+        <div className="logoWord">FLOWAY</div>
+        <div className="wing wingRight" />
+        <div className="subtitle">Le meilleur arrêt sur votre route</div>
       </header>
 
-      <section className="hero">
-        <p className="eyebrow">ASSISTANT D’ARRÊT</p>
-        <h1>Évite la file.<br />Garde la route.</h1>
-        <p className="heroText">Floway compare les prochaines stations selon le détour, le prix et l’attente estimée.</p>
+      <section className="routeHeader">
+        <div>
+          <div className="routeLabel">PARIS → LYON</div>
+          <div className="routeSub">via A6</div>
+        </div>
+        <button className="ghostButton">Modifier</button>
+      </section>
 
-        <div className="controls">
-          <button className="primary" onClick={locate} disabled={locating}>
-            {locating ? 'Localisation…' : '⌖ Utiliser ma position'}
-          </button>
-          <select value={fuel} onChange={(event) => setFuel(event.target.value)} aria-label="Carburant">
+      <section className="mapPanel">
+        <div className="savedBadge"><strong>{saved} MIN</strong><span>GAGNÉES</span></div>
+        <div className="routeLine" />
+        {STATIONS.map((station, index) => {
+          const isBest = station.id === best.id;
+          return (
+            <div className={`routeStop stop${index + 1} ${isBest ? 'routeBest' : ''}`} key={station.id}>
+              <div className={`routeDot ${tone(station.waitMin)}`} />
+              <div className="routeCopy">
+                <strong>{station.waitMin} min</strong>
+                <span>{station.name}</span>
+                <small>{station.distanceKm} km</small>
+              </div>
+            </div>
+          );
+        })}
+        <button className="locationFab" onClick={locate} disabled={locating}>⌖</button>
+      </section>
+
+      <section className="bestCard">
+        <div className="cardTopline">
+          <span>MEILLEUR ARRÊT</span>
+          <b>≈ {saved} MIN GAGNÉES</b>
+        </div>
+        <h1>AIRE DE {best.name.toUpperCase()}</h1>
+        <p>{best.motorway} · dans {best.distanceKm} km</p>
+        <div className="dataGrid">
+          <div><span>ATTENTE</span><strong className="greenText">{best.waitMin} min</strong></div>
+          <div><span>PRIX</span><strong>{best.price.toFixed(3)} €/L</strong></div>
+          <div><span>DÉTOUR</span><strong className="orangeText">+{best.detourMin} min</strong></div>
+        </div>
+        <button className="cta">CHOISIR CET ARRÊT <span>→</span></button>
+      </section>
+
+      <section className="compareSection">
+        <div className="sectionHead">
+          <div>
+            <span className="miniLabel">PROCHAINES STATIONS</span>
+            <h2>Comparatif en temps réel</h2>
+          </div>
+          <select value={fuel} onChange={(e) => setFuel(e.target.value)}>
             <option>Gazole</option>
             <option>SP95-E10</option>
             <option>SP98</option>
             <option>E85</option>
           </select>
         </div>
-        <div className="locationLine">{position} · {fuel}</div>
-      </section>
 
-      <section className="recommendation">
-        <div className="recommendationTop">
-          <span className="pill">RECOMMANDÉ</span>
-          <span className="gain">≈ {saved} min gagnées</span>
-        </div>
-        <h2>{best.name}</h2>
-        <p className="road">{best.motorway} · dans {best.distanceKm} km</p>
-        <div className="metrics">
-          <div><span>Attente</span><strong>{best.waitMin} min</strong></div>
-          <div><span>Prix démo</span><strong>{best.price.toFixed(3)} €</strong></div>
-          <div><span>Détour</span><strong>+{best.detourMin} min</strong></div>
-        </div>
-        <button className="navigate">Choisir cet arrêt →</button>
-      </section>
-
-      <section className="section">
-        <div className="sectionTitleRow">
-          <div>
-            <p className="eyebrow">PROCHAINES STATIONS</p>
-            <h2>Comparatif en direct</h2>
-          </div>
-          <span className="confidence">Démo</span>
-        </div>
-
-        <div className="stationList">
-          {ranked.map((station, index) => {
-            const status = waitLabel(station.waitMin);
-            return (
-              <article className={`stationCard ${index === 0 ? 'best' : ''}`} key={station.id}>
-                <div className="stationHead">
-                  <div>
-                    <h3>{station.name}</h3>
-                    <p>{station.motorway} · {station.distanceKm} km</p>
-                  </div>
-                  <span className={`status ${status.className}`}>{status.label}</span>
+        <div className="stationStack">
+          {ranked.map((station) => (
+            <article className={`retroCard ${tone(station.waitMin)}Border`} key={station.id}>
+              <div className="retroCardHead">
+                <div className={`pumpIcon ${tone(station.waitMin)}`}>⛽</div>
+                <div>
+                  <span className="miniLabel">AIRE DE</span>
+                  <h3>{station.name.toUpperCase()}</h3>
+                  <p>{station.motorway} · {station.distanceKm} km</p>
                 </div>
-                <div className="stationNumbers">
-                  <span><b>{station.waitMin}</b> min attente</span>
-                  <span><b>{station.price.toFixed(3)}</b> €/L</span>
-                </div>
-                <button
-                  className={queueStation === station.id ? 'queue active' : 'queue'}
-                  onClick={() => setQueueStation(queueStation === station.id ? null : station.id)}
-                >
-                  {queueStation === station.id ? '✓ File signalée — terminer' : 'Je fais la queue ici'}
-                </button>
-              </article>
-            );
-          })}
+              </div>
+              <div className="retroStats">
+                <div><span>ATTENTE</span><strong>{station.waitMin} min</strong></div>
+                <div><span>PRIX</span><strong>{station.price.toFixed(3)} €/L</strong></div>
+                <div><span>DÉTOUR</span><strong>+{station.detourMin} min</strong></div>
+              </div>
+              <button
+                className={queueStation === station.id ? 'queueButton active' : 'queueButton'}
+                onClick={() => setQueueStation(queueStation === station.id ? null : station.id)}
+              >
+                {queueStation === station.id ? '✓ FILE SIGNALÉE — TERMINER' : 'JE FAIS LA QUEUE ICI'}
+              </button>
+            </article>
+          ))}
         </div>
       </section>
 
-      <footer>
-        <strong>Floway alpha</strong>
-        <span>Les temps d’attente et prix affichés ici sont des données de démonstration.</span>
-      </footer>
+      <section className="splitPanel">
+        <div>
+          <span>ATTENTE ACTUELLE</span>
+          <div className="splitDigits"><b>0</b><b>4</b><em>MIN</em></div>
+        </div>
+        <div className="flowState"><strong>FLUIDE</strong><div>● ● ● ○ ○</div><small>Mise à jour il y a 1 min</small></div>
+      </section>
+
+      <div className="positionNote">{position} · {fuel}</div>
+
+      <nav className="bottomNav">
+        <button className="activeNav">⌁<span>Route</span></button>
+        <button>⛽<span>Stations</span></button>
+        <button>◉<span>Communauté</span></button>
+        <button>○<span>Profil</span></button>
+      </nav>
     </main>
   );
 }
