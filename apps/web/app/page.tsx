@@ -19,6 +19,14 @@ const STATIONS: Station[] = [
   { id: '4', name: 'Courtenay', motorway: 'A6', distanceKm: 76, price: 1.909, waitMin: 12, detourMin: 2 },
 ];
 
+const TOLL = {
+  name: 'Péage de Fleury-en-Bière',
+  motorway: 'A6',
+  distanceKm: 24,
+  waitMin: 6,
+  trend: 'stable',
+};
+
 function score(station: Station) {
   return station.waitMin + station.detourMin + Math.max(0, station.price - 1.889) * 100;
 }
@@ -72,7 +80,7 @@ export default function Home() {
       <section className="routeHeader">
         <div>
           <div className="routeLabel">PARIS → LYON</div>
-          <div className="routeSub">via A6</div>
+          <div className="routeSub">via A6 · itinéraire actif</div>
         </div>
         <button className="ghostButton">Modifier</button>
       </section>
@@ -88,12 +96,21 @@ export default function Home() {
               <div className="routeCopy">
                 <strong>{station.waitMin} min</strong>
                 <span>{station.name}</span>
-                <small>{station.distanceKm} km</small>
+                <small>{station.distanceKm} km · station</small>
               </div>
             </div>
           );
         })}
+        <div className="tollStop">
+          <div className="tollDot">P</div>
+          <div className="tollCopy"><strong>{TOLL.waitMin} min</strong><span>{TOLL.name}</span><small>{TOLL.distanceKm} km · péage</small></div>
+        </div>
         <button className="locationFab" onClick={locate} disabled={locating}>⌖</button>
+      </section>
+
+      <section className="routeInsight">
+        <div><span>PROCHAIN POINT SENSIBLE</span><strong>{TOLL.name}</strong><small>{TOLL.motorway} · dans {TOLL.distanceKm} km</small></div>
+        <div className="tollTime"><b>{TOLL.waitMin}</b><span>MIN</span><small>ATTENTE DÉMO</small></div>
       </section>
 
       <section className="bestCard">
@@ -108,6 +125,7 @@ export default function Home() {
           <div><span>PRIX</span><strong>{best.price.toFixed(3)} €/L</strong></div>
           <div><span>DÉTOUR</span><strong className="orangeText">+{best.detourMin} min</strong></div>
         </div>
+        <div className="sourceStrip"><span>Source actuelle</span><strong>Données de démonstration</strong><em>Confiance : prototype</em></div>
         <button className="cta">CHOISIR CET ARRÊT <span>→</span></button>
       </section>
 
@@ -115,7 +133,7 @@ export default function Home() {
         <div className="sectionHead">
           <div>
             <span className="miniLabel">PROCHAINES STATIONS</span>
-            <h2>Comparatif en temps réel</h2>
+            <h2>Comparatif sur l’itinéraire</h2>
           </div>
           <select value={fuel} onChange={(e) => setFuel(e.target.value)}>
             <option>Gazole</option>
@@ -141,6 +159,7 @@ export default function Home() {
                 <div><span>PRIX</span><strong>{station.price.toFixed(3)} €/L</strong></div>
                 <div><span>DÉTOUR</span><strong>+{station.detourMin} min</strong></div>
               </div>
+              <div className="dataSource">Démo · futur calcul Floway = trafic + communauté + historique</div>
               <button
                 className={queueStation === station.id ? 'queueButton active' : 'queueButton'}
                 onClick={() => setQueueStation(queueStation === station.id ? null : station.id)}
@@ -157,7 +176,7 @@ export default function Home() {
           <span>ATTENTE ACTUELLE</span>
           <div className="splitDigits"><b>0</b><b>4</b><em>MIN</em></div>
         </div>
-        <div className="flowState"><strong>FLUIDE</strong><div>● ● ● ○ ○</div><small>Mise à jour il y a 1 min</small></div>
+        <div className="flowState"><strong>FLUIDE</strong><div>● ● ● ○ ○</div><small>Prototype · donnée non temps réel</small></div>
       </section>
 
       <div className="positionNote">{position} · {fuel}</div>
