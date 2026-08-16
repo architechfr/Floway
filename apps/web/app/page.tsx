@@ -1,15 +1,21 @@
 'use client';
 
-import { FormEvent, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 
 type Station = {
   id: string;
   name: string;
+  address: string;
+  city: string;
   motorway: string;
   distanceKm: number;
+  routeOffsetKm: number;
   price: number;
   waitMin: number;
   detourMin: number;
+  services: string[];
+  waitModel: { label: string; confidence: string; factors: string[] };
+  sources: { station: string; priceFreshness: string; wait: string };
 };
 
 type RouteData = {
@@ -17,31 +23,19 @@ type RouteData = {
   destination: { label: string; lat: number; lon: number };
   distanceKm: number;
   durationMin: number;
-  liveTraffic: boolean;
-  providers: { geocoding: string; routing: string };
-};
-
-const STATIONS: Station[] = [
-  { id: '1', name: 'Villabé', motorway: 'A6', distanceKm: 12, price: 1.919, waitMin: 18, detourMin: 1 },
-  { id: '2', name: 'Nemours', motorway: 'A6', distanceKm: 31, price: 1.889, waitMin: 4, detourMin: 2 },
-  { id: '3', name: 'Darvault', motorway: 'A6', distanceKm: 47, price: 1.899, waitMin: 8, detourMin: 3 },
-  { id: '4', name: 'Courtenay', motorway: 'A6', distanceKm: 76, price: 1.909, waitMin: 12, detourMin: 2 },
-];
-
-const TOLL = {
-  name: 'Péage de Fleury-en-Bière',
-  motorway: 'A6',
-  distanceKm: 24,
-  waitMin: 6,
+  stations: Station[];
+  fuel: string;
+  providers: { geocoding: string; routing: string; fuel: string; ai: string };
+  traffic: { liveConnected: boolean; availableSource: string; nextStep: string };
 };
 
 function score(station: Station) {
-  return station.waitMin + station.detourMin + Math.max(0, station.price - 1.889) * 100;
+  return station.waitMin + station.detourMin + station.price * 2;
 }
 
 function tone(minutes: number) {
   if (minutes <= 5) return 'good';
-  if (minutes <= 12) return 'medium';
+  if (minutes <= 8) return 'medium';
   return 'bad';
 }
 
@@ -61,15 +55,40 @@ export default function Home() {
   const [draftOrigin, setDraftOrigin] = useState(origin);
   const [draftDestination, setDraftDestination] = useState(destination);
   const [editingRoute, setEditingRoute] = useState(false);
-  const [routeLoading, setRouteLoading] = useState(false);
+  const [routeLoading, setRouteLoading] = useState(true);
   const [routeError, setRouteError] = useState('');
   const [routeData, setRouteData] = useState<RouteData | null>(null);
 
-  const ranked = useMemo(() => [...STATIONS].sort((a, b) => score(a) - score(b)), []);
+  async function calculateRoute(from: string, to: string, selectedFuel = fuel) {
+    setRouteLoading(true);
+    setRouteError('');
+    try {
+      const response = await fetch(`/api/route?origin=${encodeURIComponent(from)}&destination=${encodeURIComponent(to)}&fuel=${encodeURIComponent(selectedFuel)}`);
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || 'Calcul impossible');
+      setRouteData(payload);
+      setOrigin(payload.origin.label);
+      setDestination(payload.destination.label);
+      return true;
+    } catch (error) {
+      setRouteError(error instanceof Error ? error.message : 'Impossible de calculer le trajet.');
+      return false;
+    } finally {
+      setRouteLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void calculateRoute('Paris', 'Lyon', 'Gazole');
+    // Initial client showcase route.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const ranked = useMemo(() => [...(routeData?.stations || [])].sort((a, b) => score(a) - score(b)), [routeData]);
   const best = ranked[0];
-  const nearest = [...STATIONS].sort((a, b) => a.distanceKm - b.distanceKm)[0];
-  const saved = Math.max(0, nearest.waitMin + nearest.detourMin - best.waitMin - best.detourMin);
-  const totalObservedDelay = TOLL.waitMin + STATIONS.reduce((sum, station) => sum + station.waitMin, 0);
+  const nearest = [...(routeData?.stations || [])].sort((a, b) => a.distanceKm - b.distanceKm)[0];
+  const saved = best && nearest ? Math.max(0, nearest.waitMin + nearest.detourMin - best.waitMin - best.detourMin) : 0;
+  const displayedStations = (routeData?.stations || []).slice(0, 4);
 
   function locate() {
     setLocating(true);
@@ -96,23 +115,13 @@ export default function Home() {
     const from = draftOrigin.trim();
     const to = draftDestination.trim();
     if (!from || !to) return;
+    const ok = await calculateRoute(from, to, fuel);
+    if (ok) setEditingRoute(false);
+  }
 
-    setRouteLoading(true);
-    setRouteError('');
-    try {
-      const response = await fetch(`/api/route?origin=${encodeURIComponent(from)}&destination=${encodeURIComponent(to)}`);
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || 'Calcul impossible');
-
-      setRouteData(payload);
-      setOrigin(payload.origin.label);
-      setDestination(payload.destination.label);
-      setEditingRoute(false);
-    } catch (error) {
-      setRouteError(error instanceof Error ? error.message : 'Impossible de calculer le trajet.');
-    } finally {
-      setRouteLoading(false);
-    }
+  async function changeFuel(nextFuel: string) {
+    setFuel(nextFuel);
+    await calculateRoute(origin, destination, nextFuel);
   }
 
   return (
@@ -127,139 +136,115 @@ export default function Home() {
       <section className="routeHeader">
         <div>
           <div className="routeLabel">{origin.toUpperCase()} → {destination.toUpperCase()}</div>
-          <div className="routeSub">itinéraire actif · calcul routier réel</div>
+          <div className="routeSub">itinéraire + stations + prix réels</div>
         </div>
         <button className="ghostButton" onClick={() => setEditingRoute(true)}>Modifier</button>
       </section>
 
       <section className="tripSummary">
-        <div><span>TRAJET</span><strong>{routeData ? formatDuration(routeData.durationMin) : '≈ 4 h 28'}</strong><small>{routeData ? `${routeData.distanceKm} km calculés` : 'référence démo'}</small></div>
-        <div><span>POINTS SENSIBLES</span><strong>5</strong><small>encore en mode démo</small></div>
-        <div><span>TEMPS OBSERVÉ</span><strong>+{totalObservedDelay} min</strong><small>attentes encore simulées</small></div>
-        <div className="summaryGain"><span>GAIN FLOWAY</span><strong>≈ {saved} min</strong><small>sur l’arrêt carburant</small></div>
+        <div><span>TRAJET RÉEL</span><strong>{routeData ? formatDuration(routeData.durationMin) : '—'}</strong><small>{routeData ? `${routeData.distanceKm} km` : 'calcul en cours'}</small></div>
+        <div><span>STATIONS SUR ROUTE</span><strong>{routeData?.stations.length ?? '—'}</strong><small>flux officiel État</small></div>
+        <div><span>MOTEUR IA</span><strong>{best ? `${best.waitMin} min` : '—'}</strong><small>meilleure attente estimée</small></div>
+        <div className="summaryGain"><span>GAIN FLOWAY</span><strong>{best ? `≈ ${saved} min` : '—'}</strong><small>vs prochain arrêt détecté</small></div>
       </section>
 
-      {routeData && (
-        <section className="routeProviderStrip">
-          <span>ITINÉRAIRE RÉEL</span>
-          <strong>{routeData.distanceKm} km · {formatDuration(routeData.durationMin)}</strong>
-          <small>{routeData.providers.geocoding} + {routeData.providers.routing} · trafic temps réel non inclus</small>
-        </section>
-      )}
+      <section className="routeProviderStrip">
+        <span>{routeLoading ? 'FLOWAY ANALYSE LA ROUTE…' : 'DONNÉES RÉELLES + ESTIMATION IA'}</span>
+        <strong>{routeData ? `${routeData.distanceKm} km · ${formatDuration(routeData.durationMin)} · ${routeData.stations.length} stations` : 'Calcul en cours'}</strong>
+        <small>{routeData ? `${routeData.providers.routing} · ${routeData.providers.fuel} · attente : ${routeData.providers.ai}` : 'Géocodage, routage et recherche des stations…'}</small>
+      </section>
+
+      {routeError && <div className="routeError routeErrorMain">{routeError}</div>}
 
       <section className="mapPanel">
-        <div className="savedBadge"><strong>{saved} MIN</strong><span>GAGNÉES</span></div>
+        <div className="savedBadge"><strong>{best ? `${saved} MIN` : 'IA'}</strong><span>{best ? 'POTENTIEL' : 'ANALYSE'}</span></div>
         <div className="routeLine" />
-        {STATIONS.map((station, index) => {
-          const isBest = station.id === best.id;
+        {displayedStations.map((station, index) => {
+          const isBest = station.id === best?.id;
           return (
             <div className={`routeStop stop${index + 1} ${isBest ? 'routeBest' : ''}`} key={station.id}>
               <div className={`routeDot ${tone(station.waitMin)}`} />
               <div className="routeCopy">
-                <strong>{station.waitMin} min</strong>
-                <span>{station.name}</span>
-                <small>{station.distanceKm} km · station démo</small>
+                <strong>{station.waitMin} min IA</strong>
+                <span>{station.city || station.name}</span>
+                <small>{station.distanceKm} km · {station.price.toFixed(3)} €/L</small>
               </div>
             </div>
           );
         })}
-        <div className="tollStop">
-          <div className="tollDot">P</div>
-          <div className="tollCopy"><strong>{TOLL.waitMin} min</strong><span>{TOLL.name}</span><small>{TOLL.distanceKm} km · péage démo</small></div>
-        </div>
         <button className="locationFab" onClick={locate} disabled={locating}>⌖</button>
       </section>
 
-      <section className="routeInsight">
-        <div><span>PROCHAIN POINT SENSIBLE</span><strong>{TOLL.name}</strong><small>{TOLL.motorway} · dans {TOLL.distanceKm} km</small></div>
-        <div className="tollTime"><b>{TOLL.waitMin}</b><span>MIN</span><small>ATTENTE DÉMO</small></div>
-      </section>
+      {nearest && (
+        <section className="routeInsight">
+          <div><span>PROCHAINE STATION RÉELLE</span><strong>{nearest.city || nearest.name}</strong><small>dans {nearest.distanceKm} km · à {nearest.routeOffsetKm} km de la route</small></div>
+          <div className="tollTime"><b>{nearest.waitMin}</b><span>MIN</span><small>ESTIMATION IA</small></div>
+        </section>
+      )}
 
-      <section className="bestCard">
-        <div className="cardTopline">
-          <span>MEILLEUR ARRÊT</span>
-          <b>≈ {saved} MIN GAGNÉES</b>
-        </div>
-        <h1>AIRE DE {best.name.toUpperCase()}</h1>
-        <p>{best.motorway} · dans {best.distanceKm} km</p>
-        <div className="dataGrid">
-          <div><span>ATTENTE</span><strong className="greenText">{best.waitMin} min</strong></div>
-          <div><span>PRIX</span><strong>{best.price.toFixed(3)} €/L</strong></div>
-          <div><span>DÉTOUR</span><strong className="orangeText">+{best.detourMin} min</strong></div>
-        </div>
-        <div className="sourceStrip"><span>Source attente</span><strong>Données de démonstration</strong><em>Confiance : prototype</em></div>
-        <button className="cta">CHOISIR CET ARRÊT <span>→</span></button>
-      </section>
+      {best ? (
+        <section className="bestCard">
+          <div className="cardTopline"><span>RECOMMANDATION FLOWAY</span><b>≈ {saved} MIN DE POTENTIEL</b></div>
+          <h1>{best.city ? `STATION ${best.city.toUpperCase()}` : best.name.toUpperCase()}</h1>
+          <p>{best.address} · dans {best.distanceKm} km</p>
+          <div className="dataGrid">
+            <div><span>ATTENTE IA</span><strong className="greenText">{best.waitMin} min</strong></div>
+            <div><span>PRIX OFFICIEL</span><strong>{best.price.toFixed(3)} €/L</strong></div>
+            <div><span>DÉTOUR EST.</span><strong className="orangeText">+{best.detourMin} min</strong></div>
+          </div>
+          <div className="sourceStrip"><span>Confiance IA</span><strong>{best.waitModel.confidence}</strong><em>Prix : flux officiel</em></div>
+          <div className="aiExplain"><b>Pourquoi Floway la recommande</b>{best.waitModel.factors.map((factor) => <span key={factor}>• {factor}</span>)}</div>
+          <button className="cta">CHOISIR CET ARRÊT <span>→</span></button>
+        </section>
+      ) : !routeLoading && (
+        <section className="bestCard"><div className="cardTopline"><span>ANALYSE FLOWAY</span></div><h1>AUCUNE STATION ÉLIGIBLE</h1><p>Aucune station avec prix {fuel} n’a été identifiée à proximité immédiate de cet itinéraire.</p></section>
+      )}
 
       <section className="compareSection">
         <div className="sectionHead">
-          <div>
-            <span className="miniLabel">PROCHAINES STATIONS</span>
-            <h2>Comparatif sur l’itinéraire</h2>
-          </div>
-          <select value={fuel} onChange={(e) => setFuel(e.target.value)}>
-            <option>Gazole</option>
-            <option>SP95-E10</option>
-            <option>SP98</option>
-            <option>E85</option>
+          <div><span className="miniLabel">STATIONS RÉELLES SUR L’ITINÉRAIRE</span><h2>Comparatif Floway</h2></div>
+          <select value={fuel} onChange={(e) => void changeFuel(e.target.value)} disabled={routeLoading}>
+            <option>Gazole</option><option>SP95-E10</option><option>SP98</option><option>E85</option>
           </select>
         </div>
 
         <div className="stationStack">
-          {ranked.map((station) => (
+          {ranked.slice(0, 10).map((station) => (
             <article className={`retroCard ${tone(station.waitMin)}Border`} key={station.id}>
-              <div className="retroCardHead">
-                <div className={`pumpIcon ${tone(station.waitMin)}`}>⛽</div>
-                <div>
-                  <span className="miniLabel">AIRE DE</span>
-                  <h3>{station.name.toUpperCase()}</h3>
-                  <p>{station.motorway} · {station.distanceKm} km</p>
-                </div>
-              </div>
+              <div className="retroCardHead"><div className={`pumpIcon ${tone(station.waitMin)}`}>⛽</div><div><span className="miniLabel">{station.waitModel.label}</span><h3>{station.city ? station.city.toUpperCase() : station.name.toUpperCase()}</h3><p>{station.address} · {station.distanceKm} km sur le trajet</p></div></div>
               <div className="retroStats">
-                <div><span>ATTENTE</span><strong>{station.waitMin} min</strong></div>
-                <div><span>PRIX</span><strong>{station.price.toFixed(3)} €/L</strong></div>
-                <div><span>DÉTOUR</span><strong>+{station.detourMin} min</strong></div>
+                <div><span>ATTENTE IA</span><strong>{station.waitMin} min</strong></div>
+                <div><span>PRIX OFFICIEL</span><strong>{station.price.toFixed(3)} €/L</strong></div>
+                <div><span>DÉTOUR EST.</span><strong>+{station.detourMin} min</strong></div>
               </div>
-              <div className="dataSource">Démo · futur calcul Floway = trafic + communauté + historique</div>
+              <div className="dataSource">{station.sources.station} · {station.sources.priceFreshness} · confiance IA {station.waitModel.confidence}</div>
               <button className={queueStation === station.id ? 'queueButton active' : 'queueButton'} onClick={() => setQueueStation(queueStation === station.id ? null : station.id)}>
-                {queueStation === station.id ? '✓ FILE SIGNALÉE — TERMINER' : 'JE FAIS LA QUEUE ICI'}
+                {queueStation === station.id ? '✓ PRÉSENCE SIGNALÉE — TERMINER' : 'JE SUIS DANS LA FILE'}
               </button>
             </article>
           ))}
         </div>
       </section>
 
-      <section className="splitPanel">
-        <div>
-          <span>ATTENTE ACTUELLE</span>
-          <div className="splitDigits"><b>0</b><b>4</b><em>MIN</em></div>
-        </div>
-        <div className="flowState"><strong>FLUIDE</strong><div>● ● ● ○ ○</div><small>Prototype · donnée non temps réel</small></div>
-      </section>
+      {best && (
+        <section className="splitPanel">
+          <div><span>ESTIMATION FLOWAY</span><div className="splitDigits"><b>{String(best.waitMin).padStart(2, '0')[0]}</b><b>{String(best.waitMin).padStart(2, '0')[1]}</b><em>MIN</em></div></div>
+          <div className="flowState"><strong>{tone(best.waitMin) === 'good' ? 'FLUIDE' : tone(best.waitMin) === 'medium' ? 'MODÉRÉ' : 'CHARGÉ'}</strong><div>● ● ● ○ ○</div><small>Modèle v0 · à enrichir par trafic + communauté</small></div>
+        </section>
+      )}
 
       <div className="positionNote">{position} · {fuel}</div>
-
-      <nav className="bottomNav">
-        <button className="activeNav">⌁<span>Route</span></button>
-        <button>⛽<span>Stations</span></button>
-        <button>◉<span>Communauté</span></button>
-        <button>○<span>Profil</span></button>
-      </nav>
+      <nav className="bottomNav"><button className="activeNav">⌁<span>Route</span></button><button>⛽<span>Stations</span></button><button>◉<span>Communauté</span></button><button>○<span>Profil</span></button></nav>
 
       {editingRoute && (
         <div className="modalBackdrop" onClick={() => !routeLoading && setEditingRoute(false)}>
           <form className="routeModal" onSubmit={saveRoute} onClick={(e) => e.stopPropagation()}>
-            <span className="miniLabel">NOUVEL ITINÉRAIRE</span>
-            <h2>Où va-t-on ?</h2>
+            <span className="miniLabel">NOUVEL ITINÉRAIRE</span><h2>Où va-t-on ?</h2>
             <label>Départ<input value={draftOrigin} onChange={(e) => setDraftOrigin(e.target.value)} disabled={routeLoading} /></label>
             <label>Destination<input value={draftDestination} onChange={(e) => setDraftDestination(e.target.value)} disabled={routeLoading} /></label>
             {routeError && <div className="routeError">{routeError}</div>}
-            <div className="modalActions">
-              <button type="button" className="ghostButton" onClick={() => setEditingRoute(false)} disabled={routeLoading}>Annuler</button>
-              <button type="submit" className="cta" disabled={routeLoading}>{routeLoading ? 'CALCUL EN COURS…' : 'CALCULER LE TRAJET →'}</button>
-            </div>
-            <small>Géocodage : Géoplateforme/BAN. Routage : OSRM/OpenStreetMap. Prototype sans trafic temps réel.</small>
+            <div className="modalActions"><button type="button" className="ghostButton" onClick={() => setEditingRoute(false)} disabled={routeLoading}>Annuler</button><button type="submit" className="cta" disabled={routeLoading}>{routeLoading ? 'FLOWAY ANALYSE…' : 'ANALYSER LE TRAJET →'}</button></div>
+            <small>Trajet et stations réels. Prix officiels. L’attente est une estimation Floway explicitement identifiée, destinée à être renforcée par trafic et communauté.</small>
           </form>
         </div>
       )}
