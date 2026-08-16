@@ -1,0 +1,9 @@
+{
+  "name": "floway",
+  "private": true,
+  "workspaces": ["apps/*", "packages/*"],
+  "scripts": {
+    "test": "node --test packages/algorithms/*.test.mjs",
+    "lint": "echo 'Add ESLint after Expo bootstrap'"
+  }
+}
