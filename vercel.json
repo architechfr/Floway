@@ -1,5 +1,0 @@
-{
-  "buildCommand": "npm run build --workspace=@floway/web",
-  "installCommand": "npm install",
-  "framework": "nextjs"
-}
