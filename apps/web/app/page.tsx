@@ -14,6 +14,8 @@ type Station = {
   waitMin: number;
   detourMin: number;
   services: string[];
+  serviceCategories?: string[];
+  arrivalHour?: number;
   waitModel: { label: string; confidence: string; factors: string[] };
   sources: { station: string; priceFreshness: string; wait: string };
 };
@@ -31,6 +33,8 @@ type TrafficStatus = {
   connected: boolean;
   traffic?: { available?: boolean; expectedRefresh?: string };
 };
+
+type ServiceFilter = 'Tous' | 'Restauration' | 'Café' | 'Boutique' | 'Toilettes';
 
 function formatDuration(totalMinutes: number) {
   const h = Math.floor(totalMinutes / 60);
@@ -54,6 +58,11 @@ function score(station: Station) {
   return station.waitMin + station.detourMin + station.price * 2;
 }
 
+function sampleStations(stations: Station[], max = 6) {
+  if (stations.length <= max) return stations;
+  return Array.from({ length: max }, (_, i) => stations[Math.round(i * (stations.length - 1) / (max - 1))]);
+}
+
 export default function Home() {
   const [origin, setOrigin] = useState('Paris');
   const [destination, setDestination] = useState('Lyon');
@@ -67,6 +76,9 @@ export default function Home() {
   const [editing, setEditing] = useState(false);
   const [selected, setSelected] = useState<Station | null>(null);
   const [activeTab, setActiveTab] = useState<'route' | 'stations' | 'community' | 'profile'>('route');
+  const [startAfterKm, setStartAfterKm] = useState(120);
+  const [serviceFilter, setServiceFilter] = useState<ServiceFilter>('Tous');
+  const [showAllStations, setShowAllStations] = useState(false);
 
   async function loadRoute(from: string, to: string, selectedFuel = fuel) {
     setLoading(true);
@@ -78,6 +90,7 @@ export default function Home() {
       setRouteData(json);
       setOrigin(json.origin.label);
       setDestination(json.destination.label);
+      setStartAfterKm(Math.min(120, Math.max(0, Math.floor(json.distanceKm * 0.3))));
       return true;
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Impossible de calculer cet itinéraire.');
@@ -96,12 +109,20 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const ranked = useMemo(() => [...(routeData?.stations || [])].sort((a, b) => score(a) - score(b)), [routeData]);
+  const allStations = useMemo(() => [...(routeData?.stations || [])].sort((a, b) => a.distanceKm - b.distanceKm), [routeData]);
+  const eligibleStations = useMemo(() => allStations.filter(station => {
+    if (station.distanceKm < startAfterKm) return false;
+    if (serviceFilter === 'Tous') return true;
+    return station.serviceCategories?.includes(serviceFilter) ?? false;
+  }), [allStations, startAfterKm, serviceFilter]);
+  const ranked = useMemo(() => [...eligibleStations].sort((a, b) => score(a) - score(b)), [eligibleStations]);
   const best = ranked[0];
-  const nearest = useMemo(() => [...(routeData?.stations || [])].sort((a, b) => a.distanceKm - b.distanceKm)[0], [routeData]);
+  const nearest = eligibleStations[0];
   const saved = best && nearest ? Math.max(0, nearest.waitMin + nearest.detourMin - best.waitMin - best.detourMin) : 0;
-  const routeStations = (routeData?.stations || []).slice(0, 4);
+  const routeStations = sampleStations(allStations, 6);
   const breaks = routeData ? pausePlan(routeData.durationMin) : null;
+  const visibleStations = showAllStations ? eligibleStations : eligibleStations.slice(0, 8);
+  const startAfterTime = routeData?.distanceKm ? Math.round((startAfterKm / routeData.distanceKm) * routeData.durationMin) : 0;
 
   async function submitRoute(e: FormEvent) {
     e.preventDefault();
@@ -150,7 +171,7 @@ export default function Home() {
       {error && <div className="errorBox">{error}</div>}
 
       <section className="routeMap" aria-label="Stations sur le trajet">
-        <div className="mapHeader"><span>ROUTE FLOWAY</span><strong>{saved} MIN <em>GAGNÉES</em></strong></div>
+        <div className="mapHeader"><span>ROUTE FLOWAY</span><strong>{allStations.length} <em>STATIONS DÉTECTÉES</em></strong></div>
         <div className="mapBody">
           <div className="roadRail" />
           {routeStations.map((station, index) => {
@@ -171,6 +192,32 @@ export default function Home() {
         </div>
       </section>
 
+      <section className="journeyRailSection">
+        <div className="journeyRailHead">
+          <div><small>FIL DU VOYAGE</small><strong>Toutes les stations sur l’itinéraire</strong></div>
+          <span>{allStations.length} arrêts</span>
+        </div>
+        <div className="journeyRail">
+          {allStations.map(station => (
+            <button key={station.id} className={station.distanceKm >= startAfterKm ? 'journeyStop active' : 'journeyStop muted'} onClick={() => setSelected(station)}>
+              <span>{Math.round(station.distanceKm)} km</span>
+              <i className={tone(station.waitMin)} />
+              <strong>{station.city || station.name}</strong>
+              <small>{station.serviceCategories?.slice(0, 2).join(' · ') || 'Carburant'}</small>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <section className="stopPlanner">
+        <div className="plannerHead"><div><small>QUAND VEUX-TU COMMENCER À CHERCHER ?</small><strong>Après {startAfterKm} km · environ {formatDuration(startAfterTime)}</strong></div><span>Départ avec le plein</span></div>
+        <input type="range" min="0" max={Math.max(50, Math.floor(routeData?.distanceKm || 500))} step="10" value={startAfterKm} onChange={e => setStartAfterKm(Number(e.target.value))} />
+        <div className="rangeLabels"><span>Maintenant</span><span>Plus tard sur la route</span></div>
+        <div className="serviceChips">
+          {(['Tous', 'Restauration', 'Café', 'Boutique', 'Toilettes'] as ServiceFilter[]).map(filter => <button key={filter} className={serviceFilter === filter ? 'active' : ''} onClick={() => setServiceFilter(filter)}>{filter}</button>)}
+        </div>
+      </section>
+
       {breaks && breaks.count > 0 && (
         <section className="pauseCard">
           <div><small>PLAN DE PAUSES FLOWAY</small><strong>{breaks.count} pauses conseillées</strong><span>Une pause de 15 min environ toutes les 2 h de conduite.</span></div>
@@ -180,10 +227,10 @@ export default function Home() {
 
       {best && (
         <section className="recommendation">
-          <div className="recommendHead"><span>RECOMMANDÉ</span><strong>≈ {saved} MIN GAGNÉES</strong></div>
+          <div className="recommendHead"><span>MEILLEUR ARRÊT APRÈS {startAfterKm} KM</span><strong>≈ {saved} MIN GAGNÉES</strong></div>
           <div className="stationTitle">
             <div className="pump">⛽</div>
-            <div><small>STATION</small><h2>{best.city || best.name}</h2><p>{best.address}</p></div>
+            <div><small>{best.serviceCategories?.join(' · ') || 'STATION'}</small><h2>{best.city || best.name}</h2><p>{best.address}</p></div>
           </div>
           <div className="stationStats">
             <div><span>ATTENTE IA</span><strong className="green">{best.waitMin} min</strong></div>
@@ -196,28 +243,29 @@ export default function Home() {
       )}
 
       <section className="sectionHeader" id="stations">
-        <div><small>PROCHAINES STATIONS</small><h2>Comparatif Floway</h2></div>
+        <div><small>ARRÊTS ÉLIGIBLES APRÈS {startAfterKm} KM</small><h2>{serviceFilter === 'Tous' ? 'Toutes les stations' : serviceFilter}</h2></div>
         <select value={fuel} onChange={e => void changeFuel(e.target.value)} disabled={loading}>
           <option>Gazole</option><option>SP95-E10</option><option>SP98</option><option>E85</option>
         </select>
       </section>
 
       <section className="stationList">
-        {ranked.slice(0, 6).map(station => (
+        {visibleStations.map(station => (
           <button className={`stationRow ${tone(station.waitMin)}`} key={station.id} onClick={() => setSelected(station)}>
             <div className="stationIcon">⛽</div>
-            <div className="stationInfo"><small>{station.waitModel.label}</small><strong>{station.city || station.name}</strong><span>{station.distanceKm} km sur le trajet</span></div>
+            <div className="stationInfo"><small>{station.serviceCategories?.join(' · ') || station.waitModel.label}</small><strong>{station.city || station.name}</strong><span>{station.distanceKm} km · arrivée estimée {String(station.arrivalHour ?? '--').padStart(2, '0')}h</span></div>
             <div className="stationNumbers"><b>{station.waitMin} min</b><span>{station.price.toFixed(3)} €/L</span></div>
             <i>›</i>
           </button>
         ))}
+        {eligibleStations.length > 8 && <button className="showAllButton" onClick={() => setShowAllStations(v => !v)}>{showAllStations ? 'Réduire la liste' : `Voir les ${eligibleStations.length} stations éligibles`}</button>}
       </section>
 
       {activeTab === 'community' && (
         <section className="simplePanel"><small>COMMUNAUTÉ FLOWAY</small><h2>Le signal terrain complète l’IA</h2><p>Les conducteurs peuvent signaler leur présence dans une file. Ces observations renforceront progressivement la précision du modèle.</p></section>
       )}
       {activeTab === 'profile' && (
-        <section className="simplePanel"><small>PROFIL</small><h2>Préférences conducteur</h2><p>Carburant favori, tolérance au détour, budget et préférences d’arrêt pourront personnaliser le score Floway.</p></section>
+        <section className="simplePanel"><small>PROFIL</small><h2>Préférences conducteur</h2><p>Carburant favori, tolérance au détour, heure de pause, restauration et services pourront personnaliser le score Floway.</p></section>
       )}
 
       <nav className="bottomNav">
@@ -243,7 +291,7 @@ export default function Home() {
           <section className="detailSheet" onClick={e => e.stopPropagation()}>
             <button className="closeButton" onClick={() => setSelected(null)}>←</button>
             <div className="detailHero"><small>AIRE / STATION</small><h2>{selected.city || selected.name}</h2><p>{selected.address}</p></div>
-            <div className="detailBadge">RECOMMANDATION FLOWAY</div>
+            <div className="detailBadge">{selected.serviceCategories?.join(' · ') || 'RECOMMANDATION FLOWAY'}</div>
             <div className="detailStats">
               <div><span>ATTENTE IA</span><strong>{selected.waitMin} min</strong></div>
               <div><span>PRIX</span><strong>{selected.price.toFixed(3)} €/L</strong></div>
@@ -251,7 +299,7 @@ export default function Home() {
             </div>
             <div className="retroBoard"><span>ATTENTE ESTIMÉE</span><strong>{String(selected.waitMin).padStart(2, '0')}</strong><b>MIN</b></div>
             <div className="detailExplain"><small>POURQUOI CETTE ESTIMATION ?</small>{selected.waitModel.factors.map(f => <p key={f}>• {f}</p>)}</div>
-            <div className="services"><small>SERVICES DÉCLARÉS</small><div>{(selected.services.length ? selected.services : ['Carburant', 'Paiement CB', 'Aire']).slice(0, 6).map(s => <span key={s}>{s}</span>)}</div></div>
+            <div className="services"><small>SERVICES DÉCLARÉS</small><div>{(selected.services.length ? selected.services : ['Carburant', 'Paiement CB', 'Aire']).slice(0, 10).map(s => <span key={s}>{s}</span>)}</div></div>
             <button className="primaryButton greenButton">CHOISIR CET ARRÊT →</button>
           </section>
         </div>
