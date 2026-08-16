@@ -26,7 +26,14 @@ type RouteData = {
   stations: Station[];
   fuel: string;
   providers: { geocoding: string; routing: string; fuel: string; ai: string };
-  traffic: { liveConnected: boolean; availableSource: string; nextStep: string };
+};
+
+type TrafficStatus = {
+  connected: boolean;
+  provider: string;
+  traffic?: { available?: boolean; scope?: string; expectedRefresh?: string; latestPublicationSeen?: string | null };
+  events?: { available?: boolean; scope?: string; latestPublicationSeen?: string | null };
+  limitations?: string[];
 };
 
 function score(station: Station) {
@@ -45,6 +52,12 @@ function formatDuration(totalMinutes: number) {
   return hours ? `${hours} h ${String(minutes).padStart(2, '0')}` : `${minutes} min`;
 }
 
+function formatFreshness(value?: string | null) {
+  if (!value) return 'publication détectée';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? 'publication détectée' : date.toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
 export default function Home() {
   const [position, setPosition] = useState('Position non activée');
   const [locating, setLocating] = useState(false);
@@ -58,6 +71,7 @@ export default function Home() {
   const [routeLoading, setRouteLoading] = useState(true);
   const [routeError, setRouteError] = useState('');
   const [routeData, setRouteData] = useState<RouteData | null>(null);
+  const [trafficStatus, setTrafficStatus] = useState<TrafficStatus | null>(null);
 
   async function calculateRoute(from: string, to: string, selectedFuel = fuel) {
     setRouteLoading(true);
@@ -78,9 +92,19 @@ export default function Home() {
     }
   }
 
+  async function refreshTrafficStatus() {
+    try {
+      const response = await fetch('/api/traffic', { cache: 'no-store' });
+      const payload = await response.json();
+      setTrafficStatus(payload);
+    } catch {
+      setTrafficStatus({ connected: false, provider: 'Bison Futé' });
+    }
+  }
+
   useEffect(() => {
     void calculateRoute('Paris', 'Lyon', 'Gazole');
-    // Initial client showcase route.
+    void refreshTrafficStatus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -116,7 +140,10 @@ export default function Home() {
     const to = draftDestination.trim();
     if (!from || !to) return;
     const ok = await calculateRoute(from, to, fuel);
-    if (ok) setEditingRoute(false);
+    if (ok) {
+      await refreshTrafficStatus();
+      setEditingRoute(false);
+    }
   }
 
   async function changeFuel(nextFuel: string) {
@@ -144,7 +171,7 @@ export default function Home() {
       <section className="tripSummary">
         <div><span>TRAJET RÉEL</span><strong>{routeData ? formatDuration(routeData.durationMin) : '—'}</strong><small>{routeData ? `${routeData.distanceKm} km` : 'calcul en cours'}</small></div>
         <div><span>STATIONS SUR ROUTE</span><strong>{routeData?.stations.length ?? '—'}</strong><small>flux officiel État</small></div>
-        <div><span>MOTEUR IA</span><strong>{best ? `${best.waitMin} min` : '—'}</strong><small>meilleure attente estimée</small></div>
+        <div><span>TRAFIC OFFICIEL</span><strong>{trafficStatus?.connected ? 'CONNECTÉ' : 'EN ATTENTE'}</strong><small>{trafficStatus?.traffic?.available ? 'Bison Futé actif' : 'couverture à vérifier'}</small></div>
         <div className="summaryGain"><span>GAIN FLOWAY</span><strong>{best ? `≈ ${saved} min` : '—'}</strong><small>vs prochain arrêt détecté</small></div>
       </section>
 
@@ -153,6 +180,20 @@ export default function Home() {
         <strong>{routeData ? `${routeData.distanceKm} km · ${formatDuration(routeData.durationMin)} · ${routeData.stations.length} stations` : 'Calcul en cours'}</strong>
         <small>{routeData ? `${routeData.providers.routing} · ${routeData.providers.fuel} · attente : ${routeData.providers.ai}` : 'Géocodage, routage et recherche des stations…'}</small>
       </section>
+
+      <section className={`trafficLiveCard ${trafficStatus?.connected ? 'connected' : ''}`}>
+        <div>
+          <span className="miniLabel">TRAFIC PUBLIC TEMPS RÉEL</span>
+          <h2>{trafficStatus?.connected ? 'Bison Futé connecté' : 'Connexion Bison Futé'}</h2>
+          <p>{trafficStatus?.traffic?.scope || 'Vérification des flux trafic et événements routiers.'}</p>
+        </div>
+        <div className="trafficLiveMeta">
+          <strong>{trafficStatus?.traffic?.available ? 'ACTIF' : 'PARTIEL'}</strong>
+          <span>{trafficStatus?.traffic?.expectedRefresh || '1–6 min'}</span>
+          <small>{formatFreshness(trafficStatus?.traffic?.latestPublicationSeen)}</small>
+        </div>
+      </section>
+      {trafficStatus?.limitations?.[0] && <div className="coverageNote">Couverture actuelle : {trafficStatus.limitations[0]}</div>}
 
       {routeError && <div className="routeError routeErrorMain">{routeError}</div>}
 
@@ -229,7 +270,7 @@ export default function Home() {
       {best && (
         <section className="splitPanel">
           <div><span>ESTIMATION FLOWAY</span><div className="splitDigits"><b>{String(best.waitMin).padStart(2, '0')[0]}</b><b>{String(best.waitMin).padStart(2, '0')[1]}</b><em>MIN</em></div></div>
-          <div className="flowState"><strong>{tone(best.waitMin) === 'good' ? 'FLUIDE' : tone(best.waitMin) === 'medium' ? 'MODÉRÉ' : 'CHARGÉ'}</strong><div>● ● ● ○ ○</div><small>Modèle v0 · à enrichir par trafic + communauté</small></div>
+          <div className="flowState"><strong>{tone(best.waitMin) === 'good' ? 'FLUIDE' : tone(best.waitMin) === 'medium' ? 'MODÉRÉ' : 'CHARGÉ'}</strong><div>● ● ● ○ ○</div><small>Modèle v0 · trafic Bison Futé en cours d’intégration au score</small></div>
         </section>
       )}
 
@@ -244,7 +285,7 @@ export default function Home() {
             <label>Destination<input value={draftDestination} onChange={(e) => setDraftDestination(e.target.value)} disabled={routeLoading} /></label>
             {routeError && <div className="routeError">{routeError}</div>}
             <div className="modalActions"><button type="button" className="ghostButton" onClick={() => setEditingRoute(false)} disabled={routeLoading}>Annuler</button><button type="submit" className="cta" disabled={routeLoading}>{routeLoading ? 'FLOWAY ANALYSE…' : 'ANALYSER LE TRAJET →'}</button></div>
-            <small>Trajet et stations réels. Prix officiels. L’attente est une estimation Floway explicitement identifiée, destinée à être renforcée par trafic et communauté.</small>
+            <small>Trajet et stations réels. Prix officiels. Flux Bison Futé surveillés. L’attente reste une estimation Floway explicitement identifiée jusqu’à calibration communautaire.</small>
           </form>
         </div>
       )}
