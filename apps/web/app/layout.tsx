@@ -4,6 +4,8 @@ import './timing.css';
 import './journey.css';
 import './context.css';
 import './poi.css';
+import './interactions.css';
+import InteractionLayer from './interaction-layer';
 
 export const metadata: Metadata = {
   title: 'Floway — Le meilleur arrêt sur votre route',
@@ -13,7 +15,10 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="fr">
-      <body>{children}</body>
+      <body>
+        {children}
+        <InteractionLayer />
+      </body>
     </html>
   );
 }
