@@ -12,6 +12,7 @@ import './premium-v2.css';
 import './premium-home.css';
 import './floway-v3.css';
 import './floway-live.css';
+import './logic-v4.css';
 import InteractionLayer from './interaction-layer';
 import PwaInstall from './pwa-install';
 
