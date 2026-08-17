@@ -1,0 +1,54 @@
+{
+  "name": "Floway — Le meilleur arrêt sur votre route",
+  "short_name": "Floway",
+  "description": "Assistant d’itinéraire intelligent pour optimiser carburant, recharge, pauses, restauration et temps d’arrêt.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
+  "orientation": "portrait-primary",
+  "background_color": "#05120e",
+  "theme_color": "#0a2119",
+  "categories": ["navigation", "travel", "utilities"],
+  "lang": "fr-FR",
+  "icons": [
+    {
+      "src": "/floway-app-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/floway-app-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Itinéraire Floway",
+      "short_name": "Itinéraire",
+      "url": "/",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Mode électrique",
+      "short_name": "Électrique",
+      "url": "/ev",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    }
+  ]
+}
