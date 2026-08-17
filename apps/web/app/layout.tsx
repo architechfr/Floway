@@ -8,6 +8,7 @@ import './interactions.css';
 import './visuals.css';
 import './cinematic.css';
 import './pwa.css';
+import './premium-v2.css';
 import InteractionLayer from './interaction-layer';
 import PwaInstall from './pwa-install';
 
