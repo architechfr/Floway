@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 import './timing.css';
 import './journey.css';
+import './context.css';
 
 export const metadata: Metadata = {
   title: 'Floway — Le meilleur arrêt sur votre route',
