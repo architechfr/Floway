@@ -16,6 +16,9 @@ type Station = {
   services: string[];
   serviceCategories?: string[];
   arrivalHour?: number;
+  arrivalMinute?: number;
+  flowayContextScore?: number;
+  smartContext?: { period: string; intent: string; preferredServices: string[]; contextFit: number; message: string };
   waitModel: { label: string; confidence: string; factors: string[] };
   sources: { station: string; priceFreshness: string; wait: string };
 };
@@ -25,6 +28,8 @@ type RouteData = {
   destination: { label: string; lat: number; lon: number };
   distanceKm: number;
   durationMin: number;
+  departureAt?: string;
+  arrivalAt?: string;
   stations: Station[];
   fuel: string;
 };
@@ -55,12 +60,22 @@ function tone(wait: number) {
 }
 
 function score(station: Station) {
-  return station.waitMin + station.detourMin + station.price * 2;
+  return station.waitMin + station.detourMin + station.price * 2 - (station.flowayContextScore || 0);
 }
 
 function sampleStations(stations: Station[], max = 6) {
   if (stations.length <= max) return stations;
   return Array.from({ length: max }, (_, i) => stations[Math.round(i * (stations.length - 1) / (max - 1))]);
+}
+
+function localDateTimeValue(date = new Date()) {
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 16);
+}
+
+function formatClock(hour?: number, minute?: number) {
+  if (hour == null) return '--:--';
+  return `${String(hour).padStart(2, '0')}:${String(minute ?? 0).padStart(2, '0')}`;
 }
 
 export default function Home() {
@@ -69,6 +84,8 @@ export default function Home() {
   const [draftOrigin, setDraftOrigin] = useState('Paris');
   const [draftDestination, setDraftDestination] = useState('Lyon');
   const [fuel, setFuel] = useState('Gazole');
+  const [departureAt, setDepartureAt] = useState(localDateTimeValue());
+  const [draftDepartureAt, setDraftDepartureAt] = useState(localDateTimeValue());
   const [routeData, setRouteData] = useState<RouteData | null>(null);
   const [traffic, setTraffic] = useState<TrafficStatus | null>(null);
   const [loading, setLoading] = useState(true);
@@ -80,16 +97,19 @@ export default function Home() {
   const [serviceFilter, setServiceFilter] = useState<ServiceFilter>('Tous');
   const [showAllStations, setShowAllStations] = useState(false);
 
-  async function loadRoute(from: string, to: string, selectedFuel = fuel) {
+  async function loadRoute(from: string, to: string, selectedFuel = fuel, selectedDeparture = departureAt) {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch(`/api/route?origin=${encodeURIComponent(from)}&destination=${encodeURIComponent(to)}&fuel=${encodeURIComponent(selectedFuel)}`);
+      const departureIso = new Date(selectedDeparture).toISOString();
+      const res = await fetch(`/api/route?origin=${encodeURIComponent(from)}&destination=${encodeURIComponent(to)}&fuel=${encodeURIComponent(selectedFuel)}&departureAt=${encodeURIComponent(departureIso)}`);
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || 'Calcul impossible');
       setRouteData(json);
       setOrigin(json.origin.label);
       setDestination(json.destination.label);
+      setDepartureAt(selectedDeparture);
+      setDraftDepartureAt(selectedDeparture);
       setStartAfterKm(Math.min(120, Math.max(0, Math.floor(json.distanceKm * 0.3))));
       return true;
     } catch (e) {
@@ -101,7 +121,10 @@ export default function Home() {
   }
 
   useEffect(() => {
-    void loadRoute('Paris', 'Lyon', 'Gazole');
+    const initialDeparture = localDateTimeValue();
+    setDepartureAt(initialDeparture);
+    setDraftDepartureAt(initialDeparture);
+    void loadRoute('Paris', 'Lyon', 'Gazole', initialDeparture);
     fetch('/api/traffic', { cache: 'no-store' })
       .then(r => r.json())
       .then(setTraffic)
@@ -126,13 +149,13 @@ export default function Home() {
 
   async function submitRoute(e: FormEvent) {
     e.preventDefault();
-    const ok = await loadRoute(draftOrigin.trim(), draftDestination.trim(), fuel);
+    const ok = await loadRoute(draftOrigin.trim(), draftDestination.trim(), fuel, draftDepartureAt);
     if (ok) setEditing(false);
   }
 
   async function changeFuel(nextFuel: string) {
     setFuel(nextFuel);
-    await loadRoute(origin, destination, nextFuel);
+    await loadRoute(origin, destination, nextFuel, departureAt);
   }
 
   return (
@@ -151,7 +174,7 @@ export default function Home() {
           <small>ITINÉRAIRE ACTIF</small>
           <h1>{origin.split(',')[0]} <span>→</span> {destination.split(',')[0]}</h1>
           <p>{routeData ? `${routeData.distanceKm} km · ${formatDuration(routeData.durationMin)} de conduite estimée` : 'Calcul en cours…'}</p>
-          {routeData && <p className="durationDisclaimer">Hors pauses · ETA trafic temps réel non appliqué</p>}
+          {routeData && <p className="durationDisclaimer">Départ {new Date(departureAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })} · hors trafic temps réel</p>}
         </div>
         <button className="editButton" onClick={() => setEditing(true)}>✎ Modifier</button>
       </section>
@@ -182,7 +205,7 @@ export default function Home() {
                 <div className="nodeCard">
                   <b>{station.waitMin} min</b>
                   <strong>{station.city || station.name}</strong>
-                  <span>{station.distanceKm} km · {station.price.toFixed(3)} €/L</span>
+                  <span>{station.distanceKm} km · {formatClock(station.arrivalHour, station.arrivalMinute)}</span>
                 </div>
                 <i className={`nodeDot ${tone(station.waitMin)}`} />
               </button>
@@ -200,10 +223,10 @@ export default function Home() {
         <div className="journeyRail">
           {allStations.map(station => (
             <button key={station.id} className={station.distanceKm >= startAfterKm ? 'journeyStop active' : 'journeyStop muted'} onClick={() => setSelected(station)}>
-              <span>{Math.round(station.distanceKm)} km</span>
+              <span>{Math.round(station.distanceKm)} km · {formatClock(station.arrivalHour, station.arrivalMinute)}</span>
               <i className={tone(station.waitMin)} />
               <strong>{station.city || station.name}</strong>
-              <small>{station.serviceCategories?.slice(0, 2).join(' · ') || 'Carburant'}</small>
+              <small>{station.smartContext?.intent || station.serviceCategories?.slice(0, 2).join(' · ') || 'Carburant'}</small>
             </button>
           ))}
         </div>
@@ -218,6 +241,13 @@ export default function Home() {
         </div>
       </section>
 
+      {best?.smartContext && (
+        <section className="contextCard">
+          <div><small>CONTEXTE COMPRIS PAR FLOWAY</small><strong>{best.smartContext.intent}</strong><p>{best.smartContext.message}</p></div>
+          <div className="contextTime"><span>PASSAGE</span><b>{formatClock(best.arrivalHour, best.arrivalMinute)}</b><small>{best.smartContext.period}</small></div>
+        </section>
+      )}
+
       {breaks && breaks.count > 0 && (
         <section className="pauseCard">
           <div><small>PLAN DE PAUSES FLOWAY</small><strong>{breaks.count} pauses conseillées</strong><span>Une pause de 15 min environ toutes les 2 h de conduite.</span></div>
@@ -230,10 +260,10 @@ export default function Home() {
           <div className="recommendHead"><span>MEILLEUR ARRÊT APRÈS {startAfterKm} KM</span><strong>≈ {saved} MIN GAGNÉES</strong></div>
           <div className="stationTitle">
             <div className="pump">⛽</div>
-            <div><small>{best.serviceCategories?.join(' · ') || 'STATION'}</small><h2>{best.city || best.name}</h2><p>{best.address}</p></div>
+            <div><small>{best.smartContext?.intent || best.serviceCategories?.join(' · ') || 'STATION'}</small><h2>{best.city || best.name}</h2><p>{best.address}</p></div>
           </div>
           <div className="stationStats">
-            <div><span>ATTENTE IA</span><strong className="green">{best.waitMin} min</strong></div>
+            <div><span>PASSAGE</span><strong className="green">{formatClock(best.arrivalHour, best.arrivalMinute)}</strong></div>
             <div><span>PRIX OFFICIEL</span><strong>{best.price.toFixed(3)} €/L</strong></div>
             <div><span>DÉTOUR</span><strong className="orangeText">+{best.detourMin} min</strong></div>
           </div>
@@ -253,7 +283,7 @@ export default function Home() {
         {visibleStations.map(station => (
           <button className={`stationRow ${tone(station.waitMin)}`} key={station.id} onClick={() => setSelected(station)}>
             <div className="stationIcon">⛽</div>
-            <div className="stationInfo"><small>{station.serviceCategories?.join(' · ') || station.waitModel.label}</small><strong>{station.city || station.name}</strong><span>{station.distanceKm} km · arrivée estimée {String(station.arrivalHour ?? '--').padStart(2, '0')}h</span></div>
+            <div className="stationInfo"><small>{station.smartContext?.intent || station.serviceCategories?.join(' · ') || station.waitModel.label}</small><strong>{station.city || station.name}</strong><span>{station.distanceKm} km · passage {formatClock(station.arrivalHour, station.arrivalMinute)}</span></div>
             <div className="stationNumbers"><b>{station.waitMin} min</b><span>{station.price.toFixed(3)} €/L</span></div>
             <i>›</i>
           </button>
@@ -281,6 +311,8 @@ export default function Home() {
             <small>NOUVEL ITINÉRAIRE</small><h2>Où va-t-on ?</h2>
             <label>Départ<input value={draftOrigin} onChange={e => setDraftOrigin(e.target.value)} /></label>
             <label>Destination<input value={draftDestination} onChange={e => setDraftDestination(e.target.value)} /></label>
+            <label>Heure de départ<input type="datetime-local" value={draftDepartureAt} onChange={e => setDraftDepartureAt(e.target.value)} /></label>
+            <div className="departureHint">Floway adapte repas, café, services et recommandations à l’heure de passage réelle.</div>
             <button className="primaryButton" disabled={loading}>{loading ? 'ANALYSE…' : 'ANALYSER LE TRAJET →'}</button>
           </form>
         </div>
@@ -291,12 +323,13 @@ export default function Home() {
           <section className="detailSheet" onClick={e => e.stopPropagation()}>
             <button className="closeButton" onClick={() => setSelected(null)}>←</button>
             <div className="detailHero"><small>AIRE / STATION</small><h2>{selected.city || selected.name}</h2><p>{selected.address}</p></div>
-            <div className="detailBadge">{selected.serviceCategories?.join(' · ') || 'RECOMMANDATION FLOWAY'}</div>
+            <div className="detailBadge">{selected.smartContext?.intent || selected.serviceCategories?.join(' · ') || 'RECOMMANDATION FLOWAY'}</div>
             <div className="detailStats">
-              <div><span>ATTENTE IA</span><strong>{selected.waitMin} min</strong></div>
+              <div><span>PASSAGE</span><strong>{formatClock(selected.arrivalHour, selected.arrivalMinute)}</strong></div>
               <div><span>PRIX</span><strong>{selected.price.toFixed(3)} €/L</strong></div>
               <div><span>DÉTOUR</span><strong>+{selected.detourMin} min</strong></div>
             </div>
+            {selected.smartContext && <div className="smartContextDetail"><strong>{selected.smartContext.intent}</strong><p>{selected.smartContext.message}</p></div>}
             <div className="retroBoard"><span>ATTENTE ESTIMÉE</span><strong>{String(selected.waitMin).padStart(2, '0')}</strong><b>MIN</b></div>
             <div className="detailExplain"><small>POURQUOI CETTE ESTIMATION ?</small>{selected.waitModel.factors.map(f => <p key={f}>• {f}</p>)}</div>
             <div className="services"><small>SERVICES DÉCLARÉS</small><div>{(selected.services.length ? selected.services : ['Carburant', 'Paiement CB', 'Aire']).slice(0, 10).map(s => <span key={s}>{s}</span>)}</div></div>
