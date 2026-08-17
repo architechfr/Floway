@@ -32,9 +32,14 @@ function haversineKm(a: Point, b: Point) {
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 
-function sampleGeometry(coords: Point[], max = 14) {
+function sampleGeometry(coords: Point[], max = 30) {
   if (coords.length <= max) return coords;
   return Array.from({ length: max }, (_, i) => coords[Math.round(i * (coords.length - 1) / (max - 1))]);
+}
+
+function spreadAcrossRoute<T>(items: T[], max: number) {
+  if (items.length <= max) return items;
+  return Array.from({ length: max }, (_, i) => items[Math.round(i * (items.length - 1) / (max - 1))]);
 }
 
 function pointFromRecord(record: FuelRecord): Point | null {
@@ -91,11 +96,11 @@ function stopContext(date: Date) {
 }
 
 async function fetchFuelStations(routeCoords: Point[], fuel: string, routeDurationMin: number, departureAt: Date) {
-  const samples = sampleGeometry(routeCoords, 14);
+  const samples = sampleGeometry(routeCoords, 30);
   const responses = await Promise.all(samples.map(async ([lon, lat]) => {
     const url = new URL(FUEL_API);
-    url.searchParams.set('limit', '50');
-    url.searchParams.set('where', `within_distance(geom, geom'POINT(${lon} ${lat})', 28 km)`);
+    url.searchParams.set('limit', '75');
+    url.searchParams.set('where', `within_distance(geom, geom'POINT(${lon} ${lat})', 24 km)`);
     const response = await fetch(url, { headers: { Accept: 'application/json' }, next: { revalidate: 600 } });
     if (!response.ok) return [] as FuelRecord[];
     const data = await response.json() as { results?: FuelRecord[] };
@@ -126,11 +131,9 @@ async function fetchFuelStations(routeCoords: Point[], fuel: string, routeDurati
 
   const prices = enriched.map(x => x.price).sort((a, b) => a - b);
   const median = prices.length ? prices[Math.floor(prices.length / 2)] : 0;
+  const routeWideStations = spreadAcrossRoute(enriched.sort((a, b) => a.distanceKm - b.distanceKm), 180);
 
-  return enriched
-    .sort((a, b) => a.distanceKm - b.distanceKm)
-    .slice(0, 60)
-    .map((item, index) => {
+  return routeWideStations.map((item, index) => {
       const services = String(item.record.services || '').split(/[,;|]/).map(s => s.trim()).filter(Boolean);
       const categories = serviceCategories(services);
       const progress = Math.max(0, Math.min(1, item.distanceKm / routeLengthKm));
