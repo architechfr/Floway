@@ -5,6 +5,7 @@ import './journey.css';
 import './context.css';
 import './poi.css';
 import './interactions.css';
+import './visuals.css';
 import InteractionLayer from './interaction-layer';
 
 export const metadata: Metadata = {
