@@ -1,0 +1,98 @@
+<svg width="1200" height="720" viewBox="0 0 1200 720" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="sky" x1="600" y1="0" x2="600" y2="720" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#123C31"/>
+      <stop offset="0.55" stop-color="#0A1D18"/>
+      <stop offset="1" stop-color="#050B09"/>
+    </linearGradient>
+    <linearGradient id="road" x1="600" y1="420" x2="600" y2="720" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#17231F"/>
+      <stop offset="1" stop-color="#070B09"/>
+    </linearGradient>
+    <linearGradient id="car" x1="380" y1="420" x2="865" y2="565" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F4E7C8"/>
+      <stop offset="0.48" stop-color="#D6C6A6"/>
+      <stop offset="1" stop-color="#7B6D58"/>
+    </linearGradient>
+    <linearGradient id="glass" x1="520" y1="400" x2="760" y2="500" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#183D36"/>
+      <stop offset="1" stop-color="#07130F"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(930 340) rotate(90) scale(230)">
+      <stop stop-color="#4BE287" stop-opacity="0.52"/>
+      <stop offset="1" stop-color="#4BE287" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="sun" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(177 167) rotate(90) scale(108)">
+      <stop stop-color="#FF9A49" stop-opacity="0.48"/>
+      <stop offset="1" stop-color="#FF9A49" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="shadow" x="0" y="0" width="1200" height="720" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="20" stdDeviation="24" flood-color="#000000" flood-opacity="0.55"/>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="720" rx="42" fill="url(#sky)"/>
+  <rect width="1200" height="720" rx="42" fill="url(#sun)"/>
+  <rect width="1200" height="720" rx="42" fill="url(#glow)"/>
+
+  <g opacity="0.42">
+    <path d="M0 348C160 300 250 320 355 354C485 396 556 359 674 326C802 291 940 292 1200 358V466H0V348Z" fill="#153026"/>
+    <path d="M0 380C156 349 285 361 412 395C555 434 663 392 768 365C930 323 1038 347 1200 388V475H0V380Z" fill="#0D211A"/>
+  </g>
+
+  <path d="M0 470C224 430 432 436 600 464C768 436 976 430 1200 470V720H0V470Z" fill="url(#road)"/>
+  <path d="M600 470L715 720H485L600 470Z" fill="#0A100E"/>
+  <path d="M600 485L621 538H579L600 485Z" fill="#FF7A2C" opacity="0.82"/>
+  <path d="M600 571L637 666H563L600 571Z" fill="#F7D79A" opacity="0.32"/>
+
+  <g opacity="0.26">
+    <rect x="80" y="418" width="180" height="2" rx="1" fill="#D8C9AA"/>
+    <rect x="940" y="421" width="150" height="2" rx="1" fill="#D8C9AA"/>
+    <rect x="24" y="453" width="250" height="1" fill="#D8C9AA"/>
+    <rect x="916" y="456" width="250" height="1" fill="#D8C9AA"/>
+  </g>
+
+  <g filter="url(#shadow)">
+    <path d="M333 513C351 486 380 466 421 455L493 405C511 391 534 383 560 383H735C761 383 786 390 806 405L865 451C910 461 948 479 972 510L989 541C995 552 988 567 975 570L926 582H380L330 568C315 564 308 548 315 534L333 513Z" fill="url(#car)"/>
+    <path d="M489 410C503 399 520 394 540 394H720C741 394 760 401 776 415L824 454H443L489 410Z" fill="url(#glass)"/>
+    <path d="M527 405H625V452H467L527 405Z" fill="#1D4A40" opacity="0.66"/>
+    <path d="M642 405H714C733 405 749 411 764 424L797 452H642V405Z" fill="#102A23"/>
+    <path d="M354 514H424L402 541H333L354 514Z" fill="#FFF0C2"/>
+    <path d="M900 512H962L976 538H909L900 512Z" fill="#FF6B22"/>
+    <rect x="489" y="531" width="256" height="13" rx="6.5" fill="#29332F" opacity="0.66"/>
+    <path d="M522 568H790" stroke="#6B5C48" stroke-width="3" stroke-linecap="round"/>
+    <circle cx="441" cy="574" r="62" fill="#0B100E"/>
+    <circle cx="441" cy="574" r="34" fill="#4D514C"/>
+    <circle cx="441" cy="574" r="15" fill="#C5B99F"/>
+    <circle cx="852" cy="574" r="62" fill="#0B100E"/>
+    <circle cx="852" cy="574" r="34" fill="#4D514C"/>
+    <circle cx="852" cy="574" r="15" fill="#C5B99F"/>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="930" y="245" width="115" height="260" rx="28" fill="#10241D" stroke="#2E7850" stroke-width="3"/>
+    <rect x="951" y="280" width="72" height="91" rx="14" fill="#07110E" stroke="#3DD979" stroke-width="2"/>
+    <path d="M989 298L969 332H986L976 355L1007 319H990L1000 298H989Z" fill="#62E790"/>
+    <rect x="955" y="397" width="66" height="9" rx="4.5" fill="#223C31"/>
+    <rect x="955" y="419" width="50" height="9" rx="4.5" fill="#223C31"/>
+    <circle cx="988" cy="461" r="12" fill="#40D77B"/>
+    <path d="M942 438C901 456 889 476 895 516C898 538 881 548 861 538" stroke="#3DD979" stroke-width="7" stroke-linecap="round"/>
+    <circle cx="854" cy="537" r="10" fill="#3DD979"/>
+  </g>
+
+  <g opacity="0.78">
+    <circle cx="1002" cy="184" r="4" fill="#75F1A2"/>
+    <circle cx="1056" cy="225" r="3" fill="#75F1A2"/>
+    <circle cx="920" cy="205" r="3" fill="#75F1A2"/>
+    <circle cx="1086" cy="338" r="4" fill="#75F1A2"/>
+  </g>
+
+  <g opacity="0.65">
+    <path d="M95 561H255" stroke="#A88861" stroke-width="2" stroke-linecap="round"/>
+    <path d="M1001 578H1124" stroke="#A88861" stroke-width="2" stroke-linecap="round"/>
+  </g>
+
+  <text x="70" y="92" fill="#DCA06D" font-family="Arial, sans-serif" font-size="20" font-weight="700" letter-spacing="5">FLOWAY EV</text>
+  <text x="70" y="132" fill="#F5E9D0" font-family="Georgia, serif" font-size="42" font-weight="700">Recharge intelligente</text>
+  <text x="70" y="165" fill="#8DA397" font-family="Arial, sans-serif" font-size="18">Le bon arrêt, au bon moment.</text>
+</svg>
