@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 700" role="img" aria-label="Route Floway au coucher du soleil">
+<defs>
+<linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#081d18"/><stop offset=".5" stop-color="#19382e"/><stop offset="1" stop-color="#ec7d34"/></linearGradient>
+<linearGradient id="road" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#20322d"/><stop offset="1" stop-color="#050908"/></linearGradient>
+<radialGradient id="sun"><stop offset="0" stop-color="#ffd790" stop-opacity=".95"/><stop offset="1" stop-color="#ff6b22" stop-opacity="0"/></radialGradient>
+<filter id="glow"><feGaussianBlur stdDeviation="12"/></filter>
+</defs>
+<rect width="1200" height="700" fill="url(#sky)"/>
+<circle cx="865" cy="225" r="130" fill="url(#sun)"/>
+<path d="M0 390 C170 330 270 355 410 320 C580 280 730 315 900 270 C1040 235 1120 250 1200 230 L1200 700 L0 700Z" fill="#0a1713" opacity=".92"/>
+<path d="M0 438 C210 390 350 430 540 382 C730 335 885 365 1200 318 L1200 700 L0 700Z" fill="#10261e"/>
+<path d="M530 700 C560 575 575 505 594 417 C605 365 612 330 618 300 L705 300 C708 340 716 377 730 430 C750 515 800 600 875 700Z" fill="url(#road)"/>
+<path d="M659 694 C653 610 650 535 650 467 C650 402 650 352 650 306" fill="none" stroke="#f3e0b9" stroke-width="10" stroke-dasharray="26 28" opacity=".8"/>
+<path d="M603 700 C616 595 626 510 633 428" fill="none" stroke="#ff6b22" stroke-width="4" opacity=".75" filter="url(#glow)"/>
+<g transform="translate(620 475)">
+<ellipse cx="0" cy="72" rx="86" ry="16" fill="#000" opacity=".45"/>
+<path d="M-72 45 L-52 0 Q-42-24 -8-28 L35-25 Q58-21 73 9 L83 43 Q86 55 71 61 L-62 61 Q-80 58 -72 45Z" fill="#e7dbc0"/>
+<path d="M-42 3 Q-32-15 -5-18 L31-16 Q48-13 58 8Z" fill="#19312a"/>
+<circle cx="-48" cy="58" r="15" fill="#07100d"/><circle cx="57" cy="58" r="15" fill="#07100d"/>
+<rect x="-55" y="26" width="27" height="7" rx="3" fill="#ffd6a0"/><rect x="38" y="26" width="27" height="7" rx="3" fill="#ff7030"/>
+</g>
+<g opacity=".9"><circle cx="228" cy="410" r="5" fill="#35d274"/><circle cx="260" cy="390" r="3" fill="#35d274"/><circle cx="925" cy="352" r="4" fill="#ff8e2d"/><circle cx="1010" cy="328" r="3" fill="#ff8e2d"/></g>
+</svg>
