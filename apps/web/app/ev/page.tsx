@@ -2,6 +2,7 @@
 
 import { FormEvent, useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import styles from './page.module.css';
 
 type Charger = {
@@ -85,9 +86,27 @@ export default function EvPage() {
 
         <div className={styles.content}>
           <section className={styles.hero}>
-            <small>FLOWAY EV INTELLIGENCE</small>
-            <h1>Recharge au bon moment.</h1>
-            <p>Floway cherche les bornes réellement présentes autour de l’itinéraire et transforme la recharge en arrêt utile : repas, café ou pause.</p>
+            <div className={styles.heroCopy}>
+              <small>FLOWAY EV INTELLIGENCE</small>
+              <h1>Recharge au bon moment.</h1>
+              <p>Floway cherche les bornes réellement présentes autour de l’itinéraire et transforme la recharge en arrêt utile : repas, café ou pause.</p>
+            </div>
+
+            <div className={styles.visualStage} aria-label="Illustration Floway d'une voiture électrique en recharge">
+              <Image src="/floway-ev-hero.svg" alt="Voiture électrique Floway en recharge sur une aire" width={1200} height={720} priority />
+              <div className={styles.energyPulse} />
+              <div className={styles.energyPulse2} />
+              <div className={styles.scanLine} />
+              <div className={styles.liveChip}><i /> CHARGE OPTIMISÉE</div>
+              <div className={styles.floatingBattery}>
+                <span>BATTERIE</span>
+                <strong>{startSoc}%</strong>
+                <div><b style={{ width: `${startSoc}%` }} /></div>
+              </div>
+              <div className={styles.spark one}>✦</div>
+              <div className={styles.spark two}>✦</div>
+              <div className={styles.spark three}>✦</div>
+            </div>
 
             <form className={styles.form} onSubmit={analyse}>
               <div className={styles.routeGrid}>
@@ -101,7 +120,9 @@ export default function EvPage() {
                 <div className={styles.field}><label>RÉSERVE %</label><input type="number" min="5" max="40" value={reserveSoc} onChange={e => setReserveSoc(Number(e.target.value))} /></div>
                 <div className={styles.field}><label>CIBLE APRÈS CHARGE %</label><input type="number" min="40" max="95" value={targetSoc} onChange={e => setTargetSoc(Number(e.target.value))} /></div>
               </div>
-              <button className={styles.primary} disabled={loading}>{loading ? 'FLOWAY ANALYSE LES BORNES…' : 'ANALYSER LE TRAJET ÉLECTRIQUE →'}</button>
+              <button className={`${styles.primary} ${loading ? styles.loading : ''}`} disabled={loading}>
+                <span>{loading ? 'FLOWAY ANALYSE LES BORNES…' : 'ANALYSER LE TRAJET ÉLECTRIQUE →'}</span>
+              </button>
             </form>
           </section>
 
@@ -124,6 +145,7 @@ export default function EvPage() {
 
               {recommendation ? (
                 <section className={`${styles.section} ${styles.recommend}`}>
+                  <div className={styles.recommendAura} />
                   <div className={styles.recommendHead}>
                     <div><small>RECHARGE RECOMMANDÉE</small><h2>{recommendation.name}</h2><p>{recommendation.operator} · à {Math.round(recommendation.distanceKm)} km</p></div>
                     <div className={styles.bolt}>⚡</div>
@@ -132,6 +154,11 @@ export default function EvPage() {
                     <div><span>BATTERIE À L’ARRIVÉE</span><strong>{recommendation.arrivalSoc}%</strong></div>
                     <div><span>PUISSANCE</span><strong>{recommendation.powerKw} kW</strong></div>
                     <div><span>RECHARGE</span><strong>≈ {recommendation.chargeMinutes} min</strong></div>
+                  </div>
+                  <div className={styles.chargeTimeline}>
+                    <span>{recommendation.arrivalSoc}%</span>
+                    <div><i style={{ width: `${Math.max(8, recommendation.targetSoc)}%` }} /></div>
+                    <strong>{recommendation.targetSoc}%</strong>
                   </div>
                   <div className={styles.ai}>
                     <strong>FLOWAY AI — LOGIQUE DE L’ARRÊT</strong>
@@ -143,8 +170,8 @@ export default function EvPage() {
               <section className={styles.section}>
                 <div className={styles.sectionTitle}><div><small>FIL DE RECHARGE</small><h2>Bornes sur la route</h2></div><b>{data.chargers.length}</b></div>
                 <div className={styles.chargerList}>
-                  {data.chargers.slice(0, 12).map(charger => (
-                    <div className={styles.charger} key={charger.id}>
+                  {data.chargers.slice(0, 12).map((charger, index) => (
+                    <div className={styles.charger} key={charger.id} style={{ animationDelay: `${Math.min(index, 8) * 55}ms` }}>
                       <div className={styles.chargerIcon}>⚡</div>
                       <div><strong>{charger.name}</strong><span>{charger.operator} · {Math.round(charger.distanceKm)} km · détour {charger.routeOffsetKm} km</span></div>
                       <aside><b>{charger.powerKw} kW</b><small>{charger.count} point{charger.count > 1 ? 's' : ''}</small></aside>
