@@ -15,10 +15,12 @@ import './floway-live.css';
 import './logic-v4.css';
 import './station-enrichment.css';
 import './route-price.css';
+import './station-fuel-layer.css';
 import InteractionLayer from './interaction-layer';
 import PwaInstall from './pwa-install';
 import StationEnrichmentLayer from './station-enrichment-layer';
 import RoutePriceLayer from './route-price-layer';
+import StationFuelLayer from './station-fuel-layer';
 
 export const metadata: Metadata = {
   title: 'Floway — Le meilleur arrêt sur votre route',
@@ -52,6 +54,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         <InteractionLayer />
         <StationEnrichmentLayer />
         <RoutePriceLayer />
+        <StationFuelLayer />
         <PwaInstall />
       </body>
     </html>
