@@ -10,6 +10,7 @@ import './cinematic.css';
 import './pwa.css';
 import './premium-v2.css';
 import './premium-home.css';
+import './floway-v3.css';
 import InteractionLayer from './interaction-layer';
 import PwaInstall from './pwa-install';
 
@@ -34,7 +35,7 @@ export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
   viewportFit: 'cover',
-  themeColor: '#071116',
+  themeColor: '#05090c',
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
