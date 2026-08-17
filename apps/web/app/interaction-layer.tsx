@@ -3,21 +3,126 @@
 import { useEffect, useState } from 'react';
 
 type Panel = 'menu' | 'alerts' | 'community' | 'profile' | null;
+type SavedRoute = { id: string; origin: string; destination: string; savedAt: number };
+
+const ROUTES_KEY = 'floway:favorite-routes';
+
+function readSavedRoutes(): SavedRoute[] {
+  try {
+    const raw = localStorage.getItem(ROUTES_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.slice(0, 8) : [];
+  } catch {
+    return [];
+  }
+}
+
+function currentRoute() {
+  const routeButton = document.querySelector<HTMLButtonElement>('.v3routeTitle');
+  const text = routeButton?.textContent?.replace(/\s+/g, ' ').trim() || '';
+  const parts = text.split('→').map(value => value.trim()).filter(Boolean);
+  if (parts.length < 2) return null;
+  return { origin: parts[0], destination: parts[1] };
+}
+
+function setNativeInputValue(input: HTMLInputElement, value: string) {
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+  setter?.call(input, value);
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  input.dispatchEvent(new Event('change', { bubbles: true }));
+}
 
 export default function InteractionLayer() {
   const [panel, setPanel] = useState<Panel>(null);
   const [toast, setToast] = useState('');
   const [locating, setLocating] = useState(false);
+  const [savedRoutes, setSavedRoutes] = useState<SavedRoute[]>([]);
 
   function notify(message: string) {
     setToast(message);
     window.setTimeout(() => setToast(''), 3200);
   }
 
+  function persistRoutes(next: SavedRoute[]) {
+    setSavedRoutes(next);
+    try { localStorage.setItem(ROUTES_KEY, JSON.stringify(next)); } catch {}
+  }
+
+  function openRouteEditor(origin: string, destination: string) {
+    const routeButton = document.querySelector<HTMLButtonElement>('.v3routeTitle');
+    routeButton?.click();
+    window.setTimeout(() => {
+      const form = document.querySelector<HTMLFormElement>('.v3modal');
+      const inputs = form?.querySelectorAll<HTMLInputElement>('input');
+      if (!form || !inputs || inputs.length < 2) {
+        notify('Impossible d’ouvrir l’éditeur d’itinéraire.');
+        return;
+      }
+      setNativeInputValue(inputs[0], origin);
+      setNativeInputValue(inputs[1], destination);
+      window.setTimeout(() => form.requestSubmit(), 20);
+    }, 80);
+  }
+
+  function toggleCurrentRouteFavorite() {
+    const route = currentRoute();
+    if (!route) {
+      notify('Aucun itinéraire actif à enregistrer.');
+      return;
+    }
+    const key = `${route.origin.toLowerCase()}::${route.destination.toLowerCase()}`;
+    const existing = savedRoutes.find(item => `${item.origin.toLowerCase()}::${item.destination.toLowerCase()}` === key);
+    if (existing) {
+      persistRoutes(savedRoutes.filter(item => item.id !== existing.id));
+      notify('Itinéraire retiré des favoris.');
+    } else {
+      persistRoutes([{ id: `${Date.now()}`, ...route, savedAt: Date.now() }, ...savedRoutes].slice(0, 8));
+      notify('Itinéraire enregistré sur ce téléphone.');
+    }
+  }
+
+  useEffect(() => {
+    setSavedRoutes(readSavedRoutes());
+
+    const mountRouteActions = () => {
+      const routeButton = document.querySelector<HTMLButtonElement>('.v3routeTitle');
+      if (!routeButton || document.querySelector('.flowayRouteActions')) return;
+      const actions = document.createElement('div');
+      actions.className = 'flowayRouteActions';
+      actions.innerHTML = '<button type="button" data-floway-route-reverse aria-label="Inverser le trajet">⇄ <span>Inverser</span></button><button type="button" data-floway-route-favorite aria-label="Ajouter cet itinéraire aux favoris">☆ <span>Favori</span></button>';
+      routeButton.insertAdjacentElement('afterend', actions);
+    };
+
+    mountRouteActions();
+    const observer = new MutationObserver(mountRouteActions);
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, []);
+
   useEffect(() => {
     function onClick(event: MouseEvent) {
       const target = event.target as HTMLElement | null;
       if (!target) return;
+
+      const reverseRoute = target.closest<HTMLButtonElement>('[data-floway-route-reverse]');
+      if (reverseRoute) {
+        event.preventDefault();
+        event.stopPropagation();
+        const route = currentRoute();
+        if (!route) return notify('Itinéraire introuvable.');
+        openRouteEditor(route.destination, route.origin);
+        notify(`${route.destination} → ${route.origin} en cours de calcul…`);
+        return;
+      }
+
+      const favoriteRoute = target.closest<HTMLButtonElement>('[data-floway-route-favorite]');
+      if (favoriteRoute) {
+        event.preventDefault();
+        event.stopPropagation();
+        toggleCurrentRouteFavorite();
+        return;
+      }
 
       const menuButton = target.closest<HTMLButtonElement>('button.iconButton[aria-label="Menu"], button.v3icon');
       if (menuButton) {
@@ -110,7 +215,7 @@ export default function InteractionLayer() {
 
     document.addEventListener('click', onClick, true);
     return () => document.removeEventListener('click', onClick, true);
-  }, []);
+  }, [savedRoutes]);
 
   return (
     <>
@@ -126,13 +231,24 @@ export default function InteractionLayer() {
             </div>
 
             {panel === 'menu' && (
-              <div className="flowayMenuGrid">
-                <a href="/" onClick={() => setPanel(null)}><span>⌁</span><b>Route</b><small>Revenir au voyage</small></a>
-                <a href="/ev" onClick={() => setPanel(null)}><span>⚡</span><b>Électrique</b><small>Recharge intelligente</small></a>
-                <button onClick={() => { setPanel(null); document.getElementById('v3stations')?.scrollIntoView({ behavior: 'smooth' }); }}><span>⛽</span><b>Stations</b><small>Voir tous les arrêts</small></button>
-                <button onClick={() => setPanel('community')}><span>◉</span><b>Communauté</b><small>Avis et signal terrain</small></button>
-                <button onClick={() => setPanel('profile')}><span>○</span><b>Profil</b><small>Préférences conducteur</small></button>
-              </div>
+              <>
+                <div className="flowayMenuGrid">
+                  <a href="/" onClick={() => setPanel(null)}><span>⌁</span><b>Route</b><small>Revenir au voyage</small></a>
+                  <a href="/ev" onClick={() => setPanel(null)}><span>⚡</span><b>Électrique</b><small>Recharge intelligente</small></a>
+                  <button onClick={() => { setPanel(null); document.getElementById('v3stations')?.scrollIntoView({ behavior: 'smooth' }); }}><span>⛽</span><b>Stations</b><small>Voir tous les arrêts</small></button>
+                  <button onClick={() => setPanel('community')}><span>◉</span><b>Communauté</b><small>Avis et signal terrain</small></button>
+                  <button onClick={() => setPanel('profile')}><span>○</span><b>Profil</b><small>Préférences conducteur</small></button>
+                </div>
+                <div className="flowayFavoriteRoutes">
+                  <div className="flowayFavoriteHead"><span>☆ ITINÉRAIRES FAVORIS</span><small>Stockés uniquement sur ce téléphone</small></div>
+                  {savedRoutes.length === 0 ? <p>Aucun favori pour le moment. Utilise ☆ à côté de l’itinéraire pour l’enregistrer sans compte.</p> : savedRoutes.map(route => (
+                    <div className="flowayFavoriteRow" key={route.id}>
+                      <button onClick={() => { setPanel(null); openRouteEditor(route.origin, route.destination); }}><strong>{route.origin} → {route.destination}</strong><small>Recalculer cet itinéraire</small></button>
+                      <button aria-label="Supprimer ce favori" onClick={() => persistRoutes(savedRoutes.filter(item => item.id !== route.id))}>×</button>
+                    </div>
+                  ))}
+                </div>
+              </>
             )}
 
             {panel === 'alerts' && (
@@ -163,13 +279,13 @@ export default function InteractionLayer() {
 
             {panel === 'profile' && (
               <div className="flowayAlertContent">
-                <div className="flowayAlertState"><i /> <span>Profil conducteur</span></div>
-                <h3>Vos préférences guideront Floway.</h3>
-                <p>Restaurant favori, type de véhicule, fréquence de pause, carburant et services recherchés seront mémorisables ici.</p>
+                <div className="flowayAlertState"><i /> <span>Profil conducteur local</span></div>
+                <h3>Pas de compte obligatoire pour l’instant.</h3>
+                <p>Véhicule, priorité de pause et itinéraires favoris sont mémorisés localement sur cet appareil.</p>
                 <div className="flowayAlertRows">
-                  <div><span>Véhicule</span><b>Thermique / EV</b></div>
-                  <div><span>Préférences repas</span><b>À personnaliser</b></div>
-                  <div><span>Services favoris</span><b>À personnaliser</b></div>
+                  <div><span>Véhicule</span><b>Mémorisé localement</b></div>
+                  <div><span>Préférence d’arrêt</span><b>Mémorisée localement</b></div>
+                  <div><span>Itinéraires favoris</span><b>{savedRoutes.length}</b></div>
                 </div>
               </div>
             )}
