@@ -3,6 +3,7 @@ import './globals.css';
 import './timing.css';
 import './journey.css';
 import './context.css';
+import './poi.css';
 
 export const metadata: Metadata = {
   title: 'Floway — Le meilleur arrêt sur votre route',
