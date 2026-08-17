@@ -81,7 +81,16 @@ function serviceCategories(services: string[]) {
   return categories;
 }
 
-async function fetchFuelStations(routeCoords: Point[], fuel: string) {
+function stopContext(date: Date) {
+  const h = date.getHours();
+  if (h >= 5 && h < 10) return { period: 'matin', intent: 'Petit-déjeuner / café', preferred: ['Café', 'Restauration', 'Toilettes'] };
+  if (h >= 11 && h < 14) return { period: 'midi', intent: 'Déjeuner', preferred: ['Restauration', 'Toilettes', 'Boutique'] };
+  if (h >= 18 && h < 21) return { period: 'soir', intent: 'Dîner', preferred: ['Restauration', 'Toilettes'] };
+  if (h >= 21 || h < 5) return { period: 'nuit', intent: 'Pause nocturne', preferred: ['Café', 'Toilettes', 'Boutique'] };
+  return { period: 'hors repas', intent: 'Pause / carburant', preferred: ['Café', 'Toilettes', 'Boutique'] };
+}
+
+async function fetchFuelStations(routeCoords: Point[], fuel: string, routeDurationMin: number, departureAt: Date) {
   const samples = sampleGeometry(routeCoords, 14);
   const responses = await Promise.all(samples.map(async ([lon, lat]) => {
     const url = new URL(FUEL_API);
@@ -94,12 +103,11 @@ async function fetchFuelStations(routeCoords: Point[], fuel: string) {
   }));
 
   const unique = new Map<string, FuelRecord>();
-  for (const record of responses.flat()) {
-    unique.set(String(record.id || `${record.longitude}-${record.latitude}`), record);
-  }
+  for (const record of responses.flat()) unique.set(String(record.id || `${record.longitude}-${record.latitude}`), record);
 
   const cumulative: number[] = [0];
   for (let i = 1; i < routeCoords.length; i++) cumulative[i] = cumulative[i - 1] + haversineKm(routeCoords[i - 1], routeCoords[i]);
+  const routeLengthKm = cumulative[cumulative.length - 1] || 1;
 
   const enriched = [...unique.values()].map(record => {
     const point = pointFromRecord(record);
@@ -118,7 +126,6 @@ async function fetchFuelStations(routeCoords: Point[], fuel: string) {
 
   const prices = enriched.map(x => x.price).sort((a, b) => a - b);
   const median = prices.length ? prices[Math.floor(prices.length / 2)] : 0;
-  const now = new Date();
 
   return enriched
     .sort((a, b) => a.distanceKm - b.distanceKm)
@@ -126,13 +133,19 @@ async function fetchFuelStations(routeCoords: Point[], fuel: string) {
     .map((item, index) => {
       const services = String(item.record.services || '').split(/[,;|]/).map(s => s.trim()).filter(Boolean);
       const categories = serviceCategories(services);
-      const arrivalHour = (now.getHours() + Math.round(item.distanceKm / 90)) % 24;
+      const progress = Math.max(0, Math.min(1, item.distanceKm / routeLengthKm));
+      const arrivalDate = new Date(departureAt.getTime() + progress * routeDurationMin * 60_000);
+      const context = stopContext(arrivalDate);
+      const arrivalHour = arrivalDate.getHours();
+      const arrivalMinute = arrivalDate.getMinutes();
       const peak = (arrivalHour >= 7 && arrivalHour <= 9) || (arrivalHour >= 17 && arrivalHour <= 19) ? 2 : 0;
-      const lunch = arrivalHour >= 11 && arrivalHour <= 14 ? 1 : 0;
-      const weekend = [0, 6].includes(now.getDay()) ? 1 : 0;
+      const mealPeak = ['midi', 'soir'].includes(context.period) ? 1 : 0;
+      const weekend = [0, 6].includes(arrivalDate.getDay()) ? 1 : 0;
       const attractivePrice = median && item.price <= median - 0.03 ? 2 : median && item.price <= median ? 1 : 0;
       const busyServices = services.length >= 7 ? 1 : 0;
-      const waitMin = Math.max(2, Math.min(12, 2 + peak + lunch + weekend + attractivePrice + busyServices));
+      const contextMatches = context.preferred.filter(category => categories.includes(category)).length;
+      const contextFit = Math.min(3, contextMatches);
+      const waitMin = Math.max(2, Math.min(12, 2 + peak + mealPeak + weekend + attractivePrice + busyServices));
       const detourMin = Math.max(1, Math.round(item.routeDistanceKm * 1.8));
       const name = String(item.record.ville || item.record.adresse || `Station ${index + 1}`);
       return {
@@ -151,14 +164,27 @@ async function fetchFuelStations(routeCoords: Point[], fuel: string) {
         services: services.slice(0, 12),
         serviceCategories: categories,
         arrivalHour,
+        arrivalMinute,
+        arrivalIso: arrivalDate.toISOString(),
+        smartContext: {
+          period: context.period,
+          intent: context.intent,
+          preferredServices: context.preferred,
+          contextFit,
+          message: context.period === 'nuit'
+            ? 'À cette heure, Floway privilégie les services utiles la nuit plutôt qu’un repas classique.'
+            : `À cette heure, Floway privilégie : ${context.intent.toLowerCase()}.`,
+        },
+        flowayContextScore: contextFit * 4,
         waitModel: {
           label: 'Estimation IA Floway',
           confidence: services.length >= 4 ? 'moyenne' : 'exploratoire',
           factors: [
-            `arrivée estimée vers ${String(arrivalHour).padStart(2, '0')}h`,
+            `arrivée estimée vers ${String(arrivalHour).padStart(2, '0')}h${String(arrivalMinute).padStart(2, '0')}`,
+            `contexte voyage : ${context.intent}`,
+            contextMatches ? `${contextMatches} service(s) adapté(s) à cette heure` : 'services horaires à enrichir',
             attractivePrice ? 'prix attractif donc demande potentielle plus forte' : 'prix proche du marché',
             weekend ? 'effet week-end' : 'jour ouvré',
-            services.length ? `${services.length} services déclarés` : 'services non renseignés',
           ],
         },
         sources: {
@@ -174,6 +200,9 @@ export async function GET(request: NextRequest) {
   const origin = request.nextUrl.searchParams.get('origin')?.trim();
   const destination = request.nextUrl.searchParams.get('destination')?.trim();
   const fuel = request.nextUrl.searchParams.get('fuel')?.trim() || 'Gazole';
+  const departureParam = request.nextUrl.searchParams.get('departureAt');
+  const parsedDeparture = departureParam ? new Date(departureParam) : new Date();
+  const departureAt = Number.isNaN(parsedDeparture.getTime()) ? new Date() : parsedDeparture;
   if (!origin || !destination) return NextResponse.json({ error: 'Départ et destination requis.' }, { status: 400 });
 
   try {
@@ -186,13 +215,15 @@ export async function GET(request: NextRequest) {
     if (!route) throw new Error('NO_ROUTE');
     const coords = route.geometry?.coordinates as Point[] | undefined;
     if (!coords?.length) throw new Error('NO_GEOMETRY');
-
-    const stations = await fetchFuelStations(coords, fuel);
+    const durationMin = Math.round(route.duration / 60);
+    const stations = await fetchFuelStations(coords, fuel, durationMin, departureAt);
     return NextResponse.json({
       origin: { label: from.label, lat: from.lat, lon: from.lon },
       destination: { label: to.label, lat: to.lat, lon: to.lon },
       distanceKm: Math.round((route.distance / 1000) * 10) / 10,
-      durationMin: Math.round(route.duration / 60),
+      durationMin,
+      departureAt: departureAt.toISOString(),
+      arrivalAt: new Date(departureAt.getTime() + durationMin * 60_000).toISOString(),
       geometry: route.geometry,
       stations,
       fuel,
@@ -200,7 +231,7 @@ export async function GET(request: NextRequest) {
         geocoding: 'Géoplateforme / Base Adresse Nationale',
         routing: 'OSRM / OpenStreetMap',
         fuel: 'Ministère de l’Économie - flux instantané prix carburants',
-        ai: 'Floway Estimate v0',
+        ai: 'Floway Context Engine v0.1',
       },
       traffic: {
         liveConnected: false,
