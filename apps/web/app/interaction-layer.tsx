@@ -15,6 +15,28 @@ export default function InteractionLayer() {
   }
 
   useEffect(() => {
+    const shell = document.querySelector('.phoneShell');
+    const routeCard = document.querySelector('.routeCard');
+    const metrics = document.querySelector('.metricsGrid');
+    if (shell && routeCard && metrics && !document.querySelector('.flowayCinematic')) {
+      const visual = document.createElement('section');
+      visual.className = 'flowayCinematic';
+      visual.innerHTML = `
+        <div class="flowayCinematicImage">
+          <img src="/floway-road-emotion.svg" alt="Route Floway au coucher du soleil" />
+          <div class="flowayCinematicShade"></div>
+          <div class="flowayMovingCar">🚘</div>
+          <div class="flowayAiBeacon"><i></i><span>FLOWAY AI</span><b>analyse la route</b></div>
+          <div class="flowayRoadPulse"></div>
+        </div>
+        <div class="flowayCinematicCopy">
+          <small>TON VOYAGE, PAS UNE LISTE DE STATIONS</small>
+          <strong>Floway regarde plus loin.</strong>
+          <span>Arrêts, repas, trafic et énergie sont replacés dans le temps réel de ton itinéraire.</span>
+        </div>`;
+      shell.insertBefore(visual, metrics);
+    }
+
     function onClick(event: MouseEvent) {
       const target = event.target as HTMLElement | null;
       if (!target) return;
