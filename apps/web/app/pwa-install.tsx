@@ -12,8 +12,11 @@ export default function PwaInstall() {
   const [showIosHelp, setShowIosHelp] = useState(false);
   const [installed, setInstalled] = useState(false);
   const [visible, setVisible] = useState(false);
+  const [isIos, setIsIos] = useState(false);
 
   useEffect(() => {
+    setIsIos(/iphone|ipad|ipod/i.test(navigator.userAgent));
+
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(() => undefined);
     }
@@ -50,18 +53,12 @@ export default function PwaInstall() {
 
   if (installed || !visible) return null;
 
-  const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
-
   async function install() {
     if (deferredPrompt) {
       await deferredPrompt.prompt();
       const result = await deferredPrompt.userChoice;
       if (result.outcome === 'accepted') setVisible(false);
       setDeferredPrompt(null);
-      return;
-    }
-    if (isIos) {
-      setShowIosHelp(true);
       return;
     }
     setShowIosHelp(true);
