@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Floway</title>
+  <desc id="desc">Icône Floway vert nuit, orange et crème</desc>
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="28%" r="80%">
+      <stop offset="0" stop-color="#173a30"/>
+      <stop offset="0.55" stop-color="#081711"/>
+      <stop offset="1" stop-color="#030805"/>
+    </radialGradient>
+    <linearGradient id="orange" x1="0" x2="1">
+      <stop stop-color="#ff9a3b"/>
+      <stop offset="1" stop-color="#ff5b1b"/>
+    </linearGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="10" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <rect width="512" height="512" rx="118" fill="url(#bg)"/>
+  <circle cx="256" cy="256" r="188" fill="none" stroke="#1b4b39" stroke-width="3" opacity=".7"/>
+  <circle cx="256" cy="256" r="146" fill="none" stroke="#14382b" stroke-width="2" opacity=".8"/>
+  <g fill="url(#orange)" opacity=".96" filter="url(#glow)">
+    <rect x="54" y="150" width="132" height="16" rx="8"/>
+    <rect x="70" y="184" width="102" height="14" rx="7"/>
+    <rect x="86" y="216" width="72" height="12" rx="6"/>
+    <rect x="326" y="150" width="132" height="16" rx="8"/>
+    <rect x="340" y="184" width="102" height="14" rx="7"/>
+    <rect x="354" y="216" width="72" height="12" rx="6"/>
+  </g>
+  <g fill="#f8efd8">
+    <rect x="174" y="122" width="58" height="270" rx="25"/>
+    <rect x="174" y="122" width="178" height="58" rx="25"/>
+    <rect x="174" y="242" width="148" height="56" rx="24"/>
+  </g>
+  <path d="M203 148v219" stroke="#ff6b22" stroke-width="5" stroke-dasharray="16 18" opacity=".75"/>
+  <g filter="url(#glow)">
+    <circle cx="358" cy="356" r="42" fill="#35d274"/>
+    <circle cx="358" cy="356" r="17" fill="#05120e"/>
+  </g>
+</svg>
