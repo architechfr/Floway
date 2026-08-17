@@ -13,6 +13,9 @@ type Station = {
   price: number;
   waitMin: number;
   detourMin: number;
+  lat?: number;
+  lon?: number;
+  arrivalIso?: string;
   services: string[];
   serviceCategories?: string[];
   arrivalHour?: number;
@@ -21,6 +24,26 @@ type Station = {
   smartContext?: { period: string; intent: string; preferredServices: string[]; contextFit: number; message: string };
   waitModel: { label: string; confidence: string; factors: string[] };
   sources: { station: string; priceFreshness: string; wait: string };
+};
+
+type Poi = {
+  id: string;
+  name: string;
+  category: 'restaurant' | 'fast_food' | 'cafe' | 'shop';
+  brand?: string;
+  cuisine?: string;
+  openingHours?: string;
+  distanceM: number;
+  status: 'open' | 'closed' | 'unknown' | '24_7';
+  statusLabel: string;
+};
+
+type PoiData = {
+  pois: Poi[];
+  summary: { restaurants: number; cafes: number; shops: number; likelyOpen: number };
+  provider?: string;
+  note?: string;
+  degraded?: boolean;
 };
 
 type RouteData = {
@@ -78,6 +101,13 @@ function formatClock(hour?: number, minute?: number) {
   return `${String(hour).padStart(2, '0')}:${String(minute ?? 0).padStart(2, '0')}`;
 }
 
+function poiIcon(category: Poi['category']) {
+  if (category === 'cafe') return '☕';
+  if (category === 'shop') return '🛒';
+  if (category === 'fast_food') return '🍔';
+  return '🍽';
+}
+
 export default function Home() {
   const [origin, setOrigin] = useState('Paris');
   const [destination, setDestination] = useState('Lyon');
@@ -92,6 +122,9 @@ export default function Home() {
   const [error, setError] = useState('');
   const [editing, setEditing] = useState(false);
   const [selected, setSelected] = useState<Station | null>(null);
+  const [poiData, setPoiData] = useState<PoiData | null>(null);
+  const [poiLoading, setPoiLoading] = useState(false);
+  const [poiError, setPoiError] = useState('');
   const [activeTab, setActiveTab] = useState<'route' | 'stations' | 'community' | 'profile'>('route');
   const [startAfterKm, setStartAfterKm] = useState(120);
   const [serviceFilter, setServiceFilter] = useState<ServiceFilter>('Tous');
@@ -131,6 +164,44 @@ export default function Home() {
       .catch(() => setTraffic({ connected: false }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!selected) {
+      setPoiData(null);
+      setPoiError('');
+      setPoiLoading(false);
+      return;
+    }
+    if (selected.lat == null || selected.lon == null) {
+      setPoiData(null);
+      setPoiError('Coordonnées indisponibles pour cet arrêt.');
+      return;
+    }
+
+    const controller = new AbortController();
+    const arrivalAt = selected.arrivalIso || new Date(departureAt).toISOString();
+    setPoiLoading(true);
+    setPoiError('');
+    setPoiData(null);
+
+    fetch(`/api/poi?lat=${encodeURIComponent(String(selected.lat))}&lon=${encodeURIComponent(String(selected.lon))}&arrivalAt=${encodeURIComponent(arrivalAt)}`, {
+      signal: controller.signal,
+      cache: 'no-store',
+    })
+      .then(async response => {
+        const json = await response.json();
+        if (!response.ok) throw new Error(json.error || 'POI indisponibles');
+        return json as PoiData;
+      })
+      .then(setPoiData)
+      .catch(err => {
+        if (err instanceof DOMException && err.name === 'AbortError') return;
+        setPoiError('Restaurants et commerces temporairement indisponibles.');
+      })
+      .finally(() => setPoiLoading(false));
+
+    return () => controller.abort();
+  }, [selected, departureAt]);
 
   const allStations = useMemo(() => [...(routeData?.stations || [])].sort((a, b) => a.distanceKm - b.distanceKm), [routeData]);
   const eligibleStations = useMemo(() => allStations.filter(station => {
@@ -330,6 +401,41 @@ export default function Home() {
               <div><span>DÉTOUR</span><strong>+{selected.detourMin} min</strong></div>
             </div>
             {selected.smartContext && <div className="smartContextDetail"><strong>{selected.smartContext.intent}</strong><p>{selected.smartContext.message}</p></div>}
+
+            <div className="poiPanel">
+              <div className="poiHead">
+                <div><small>AUTOUR DE CET ARRÊT</small><strong>Restaurants & commerces à votre passage</strong></div>
+                <span>{formatClock(selected.arrivalHour, selected.arrivalMinute)}</span>
+              </div>
+              {poiLoading && <div className="poiLoading">Floway analyse les commerces et leurs horaires…</div>}
+              {poiError && <div className="poiError">{poiError}</div>}
+              {poiData && (
+                <>
+                  <div className="poiSummary">
+                    <div><b>{poiData.summary.likelyOpen}</b><span>ouverts probables</span></div>
+                    <div><b>{poiData.summary.restaurants}</b><span>restaurants</span></div>
+                    <div><b>{poiData.summary.cafes}</b><span>cafés</span></div>
+                    <div><b>{poiData.summary.shops}</b><span>commerces</span></div>
+                  </div>
+                  <div className="poiList">
+                    {poiData.pois.slice(0, 8).map(poi => (
+                      <div className={`poiRow ${poi.status}`} key={poi.id}>
+                        <div className="poiIcon">{poiIcon(poi.category)}</div>
+                        <div className="poiInfo">
+                          <strong>{poi.name}</strong>
+                          <span>{poi.brand && poi.brand !== poi.name ? `${poi.brand} · ` : ''}{poi.cuisine ? `${poi.cuisine} · ` : ''}{poi.distanceM} m</span>
+                          {poi.openingHours && <small>{poi.openingHours}</small>}
+                        </div>
+                        <div className="poiStatus"><b>{poi.status === 'closed' ? 'FERMÉ' : poi.status === 'unknown' ? 'À CONFIRMER' : 'OUVERT'}</b><span>{poi.statusLabel}</span></div>
+                      </div>
+                    ))}
+                    {!poiData.pois.length && <div className="poiEmpty">Aucun restaurant ou commerce renseigné dans un rayon de 1,8 km.</div>}
+                  </div>
+                  <div className="poiSource">{poiData.provider || 'OpenStreetMap'} · {poiData.note || 'Horaires utilisés comme signal contextuel.'}</div>
+                </>
+              )}
+            </div>
+
             <div className="retroBoard"><span>ATTENTE ESTIMÉE</span><strong>{String(selected.waitMin).padStart(2, '0')}</strong><b>MIN</b></div>
             <div className="detailExplain"><small>POURQUOI CETTE ESTIMATION ?</small>{selected.waitModel.factors.map(f => <p key={f}>• {f}</p>)}</div>
             <div className="services"><small>SERVICES DÉCLARÉS</small><div>{(selected.services.length ? selected.services : ['Carburant', 'Paiement CB', 'Aire']).slice(0, 10).map(s => <span key={s}>{s}</span>)}</div></div>
