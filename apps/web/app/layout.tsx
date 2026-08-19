@@ -23,6 +23,7 @@ import PwaInstall from './pwa-install';
 import StationEnrichmentLayer from './station-enrichment-layer';
 import RoutePriceLayer from './route-price-layer';
 import StationFuelLayer from './station-fuel-layer';
+import SpeedLimitLayer from './speed-limit-layer';
 
 export const metadata: Metadata = {
   title: 'Floway — Le meilleur arrêt sur votre route',
@@ -57,6 +58,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         <StationEnrichmentLayer />
         <RoutePriceLayer />
         <StationFuelLayer />
+        <SpeedLimitLayer />
         <PwaInstall />
       </body>
     </html>
