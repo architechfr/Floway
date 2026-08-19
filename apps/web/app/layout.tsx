@@ -17,6 +17,7 @@ import './station-enrichment.css';
 import './route-price.css';
 import './station-fuel-layer.css';
 import './dynamic-reference.css';
+import './road-navigation.css';
 import InteractionLayer from './interaction-layer';
 import PwaInstall from './pwa-install';
 import StationEnrichmentLayer from './station-enrichment-layer';
