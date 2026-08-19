@@ -27,6 +27,7 @@ import StationFuelLayer from './station-fuel-layer';
 import SpeedLimitLayer from './speed-limit-layer';
 import LiveCopilotLayer from './live-copilot-layer';
 import SessionRestoreLayer from './session-restore-layer';
+import CurrentLocationOrigin from './current-location-origin';
 
 export const metadata: Metadata = {
   title: 'Floway — Le meilleur arrêt sur votre route',
@@ -45,6 +46,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     {children}
     <InteractionLayer />
     <SessionRestoreLayer />
+    <CurrentLocationOrigin />
     <StationEnrichmentLayer />
     <RoutePriceLayer />
     <StationFuelLayer />
