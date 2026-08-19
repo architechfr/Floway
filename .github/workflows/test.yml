@@ -6,6 +6,7 @@ on:
 
 jobs:
   algorithms:
+    name: Tests unitaires (packages/algorithms)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -13,3 +14,19 @@ jobs:
         with:
           node-version: 22
       - run: npm test
+
+  web:
+    name: Build et typage (apps/web)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Le build genere .next/types, requis par le typecheck : cet ordre est
+      # obligatoire. C'est ce job qui aurait detecte l'erreur de syntaxe de
+      # live-copilot-layer.tsx restee 8 heures et 28 commits dans le depot.
+      - run: npm run build --workspace apps/web
+      - run: npx tsc --noEmit --project apps/web
