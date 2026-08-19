@@ -35,6 +35,7 @@ import CurrentLocationOrigin from './current-location-origin';
 import QuickFuelLayer from './quick-fuel-layer';
 import SafetyAlertLayer from './safety-alert-layer';
 import SavedPlacesLayer from './saved-places-layer';
+import NumericInputFix from './numeric-input-fix';
 
 export const metadata: Metadata = {
   title: 'Floway — Le meilleur arrêt sur votre route',
@@ -55,6 +56,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <SessionRestoreLayer />
     <CurrentLocationOrigin />
     <SavedPlacesLayer />
+    <NumericInputFix />
     <QuickFuelLayer />
     <StationEnrichmentLayer />
     <RoutePriceLayer />
