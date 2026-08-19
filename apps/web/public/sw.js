@@ -1,9 +1,12 @@
-const CACHE = 'floway-shell-v1';
+const CACHE = 'floway-shell-v2';
 const SHELL = ['/', '/ev', '/manifest.webmanifest', '/floway-app-icon.svg'];
 
 self.addEventListener('install', event => {
-  self.skipWaiting();
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)).catch(() => undefined));
+});
+
+self.addEventListener('message', event => {
+  if (event.data?.type === 'FLOWAY_SKIP_WAITING') self.skipWaiting();
 });
 
 self.addEventListener('activate', event => {
