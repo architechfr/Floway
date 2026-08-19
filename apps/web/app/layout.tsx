@@ -18,49 +18,38 @@ import './route-price.css';
 import './station-fuel-layer.css';
 import './dynamic-reference.css';
 import './road-navigation.css';
+import './live-copilot.css';
 import InteractionLayer from './interaction-layer';
 import PwaInstall from './pwa-install';
 import StationEnrichmentLayer from './station-enrichment-layer';
 import RoutePriceLayer from './route-price-layer';
 import StationFuelLayer from './station-fuel-layer';
 import SpeedLimitLayer from './speed-limit-layer';
+import LiveCopilotLayer from './live-copilot-layer';
+import SessionRestoreLayer from './session-restore-layer';
 
 export const metadata: Metadata = {
   title: 'Floway — Le meilleur arrêt sur votre route',
   description: 'Assistant d’itinéraire intelligent : stations, prix, recharge, trafic, pauses et estimation d’attente.',
   manifest: '/manifest.webmanifest',
   applicationName: 'Floway',
-  appleWebApp: {
-    capable: true,
-    statusBarStyle: 'black-translucent',
-    title: 'Floway',
-  },
+  appleWebApp: { capable: true, statusBarStyle: 'black-translucent', title: 'Floway' },
   formatDetection: { telephone: false },
-  icons: {
-    icon: [{ url: '/floway-app-icon.svg', type: 'image/svg+xml' }],
-    apple: [{ url: '/floway-app-icon.svg', type: 'image/svg+xml' }],
-  },
+  icons: { icon: [{ url: '/floway-app-icon.svg', type: 'image/svg+xml' }], apple: [{ url: '/floway-app-icon.svg', type: 'image/svg+xml' }] },
 };
 
-export const viewport: Viewport = {
-  width: 'device-width',
-  initialScale: 1,
-  viewportFit: 'cover',
-  themeColor: '#05090c',
-};
+export const viewport: Viewport = { width: 'device-width', initialScale: 1, viewportFit: 'cover', themeColor: '#05090c' };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return (
-    <html lang="fr">
-      <body>
-        {children}
-        <InteractionLayer />
-        <StationEnrichmentLayer />
-        <RoutePriceLayer />
-        <StationFuelLayer />
-        <SpeedLimitLayer />
-        <PwaInstall />
-      </body>
-    </html>
-  );
+  return <html lang="fr"><body>
+    {children}
+    <InteractionLayer />
+    <SessionRestoreLayer />
+    <StationEnrichmentLayer />
+    <RoutePriceLayer />
+    <StationFuelLayer />
+    <SpeedLimitLayer />
+    <LiveCopilotLayer />
+    <PwaInstall />
+  </body></html>;
 }
