@@ -27,11 +27,17 @@ export default function CurrentLocationOrigin(){
    btn.addEventListener('click',()=>{
     if(!navigator.geolocation){setMessage('Géolocalisation indisponible sur cet appareil.');return;}
     setBusy(true);setMessage('Localisation en cours…');
-    navigator.geolocation.getCurrentPosition(p=>{
-      const token=`@${p.coords.latitude.toFixed(6)},${p.coords.longitude.toFixed(6)}`;
-      setNativeInputValue(origin,token);
-      try{localStorage.setItem(LAST_ORIGIN,JSON.stringify({lat:p.coords.latitude,lon:p.coords.longitude,accuracy:p.coords.accuracy,updatedAt:Date.now()}));}catch{}
-      setBusy(false);setMessage(`Ma position · précision ±${Math.round(p.coords.accuracy)} m`);
+    navigator.geolocation.getCurrentPosition(async p=>{
+      try{
+        const r=await fetch(`/api/reverse-geocode?lat=${p.coords.latitude}&lon=${p.coords.longitude}`,{cache:'no-store'});
+        const j=await r.json();
+        const label=typeof j?.label==='string'&&j.label.trim()?j.label.trim():`${p.coords.latitude.toFixed(5)}, ${p.coords.longitude.toFixed(5)}`;
+        setNativeInputValue(origin,label);
+        try{localStorage.setItem(LAST_ORIGIN,JSON.stringify({lat:p.coords.latitude,lon:p.coords.longitude,accuracy:p.coords.accuracy,label,updatedAt:Date.now()}));}catch{}
+        setMessage(`Ma position détectée · ${label}`);
+      }catch{
+        setMessage('Position détectée, mais adresse momentanément indisponible.');
+      }finally{setBusy(false);}
     },()=>{setBusy(false);setMessage('Autorise la localisation pour utiliser Ma position.');},{enableHighAccuracy:true,maximumAge:3000,timeout:12000});
    });
    origin.insertAdjacentElement('afterend',btn);
