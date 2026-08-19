@@ -21,6 +21,7 @@ import './road-navigation.css';
 import './live-copilot.css';
 import './motorway-navigation.css';
 import './quick-fuel.css';
+import './safety-alert.css';
 import InteractionLayer from './interaction-layer';
 import PwaInstall from './pwa-install';
 import StationEnrichmentLayer from './station-enrichment-layer';
@@ -31,6 +32,7 @@ import LiveCopilotLayer from './live-copilot-layer';
 import SessionRestoreLayer from './session-restore-layer';
 import CurrentLocationOrigin from './current-location-origin';
 import QuickFuelLayer from './quick-fuel-layer';
+import SafetyAlertLayer from './safety-alert-layer';
 
 export const metadata: Metadata = {
   title: 'Floway — Le meilleur arrêt sur votre route',
@@ -56,6 +58,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <StationFuelLayer />
     <SpeedLimitLayer />
     <LiveCopilotLayer />
+    <SafetyAlertLayer />
     <PwaInstall />
   </body></html>;
 }
