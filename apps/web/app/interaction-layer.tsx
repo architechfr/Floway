@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 
-type Panel = 'menu' | 'alerts' | 'community' | 'profile' | null;
+type Panel = 'menu' | 'alerts' | 'community' | 'profile' | 'share' | null;
 type SavedRoute = { id: string; origin: string; destination: string; savedAt: number };
 
 const ROUTES_KEY = 'floway:favorite-routes';
@@ -38,6 +38,7 @@ export default function InteractionLayer() {
   const [toast, setToast] = useState('');
   const [locating, setLocating] = useState(false);
   const [savedRoutes, setSavedRoutes] = useState<SavedRoute[]>([]);
+  const [shareUrl, setShareUrl] = useState('');
 
   function notify(message: string) {
     setToast(message);
@@ -82,8 +83,30 @@ export default function InteractionLayer() {
     }
   }
 
+  async function copyShareLink() {
+    if (!shareUrl) return;
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      notify('Lien Floway copié.');
+    } catch {
+      notify('Impossible de copier automatiquement le lien.');
+    }
+  }
+
+  async function shareApp() {
+    if (!shareUrl) return;
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: 'Floway', text: 'Teste Floway, le copilote intelligent pour la route.', url: shareUrl });
+        return;
+      } catch {}
+    }
+    await copyShareLink();
+  }
+
   useEffect(() => {
     setSavedRoutes(readSavedRoutes());
+    setShareUrl(window.location.origin);
 
     const mountRouteActions = () => {
       const routeButton = document.querySelector<HTMLButtonElement>('.v3routeTitle');
@@ -217,16 +240,16 @@ export default function InteractionLayer() {
     return () => document.removeEventListener('click', onClick, true);
   }, [savedRoutes]);
 
+  const panelEyebrow = panel === 'menu' ? 'FLOWAY' : panel === 'alerts' ? 'SIGNAL ROUTIER' : panel === 'community' ? 'COMMUNAUTÉ' : panel === 'share' ? 'PARTAGER' : 'PROFIL';
+  const panelTitle = panel === 'menu' ? 'Navigation Floway' : panel === 'alerts' ? 'Alertes du trajet' : panel === 'community' ? 'La route vue par les voyageurs' : panel === 'share' ? 'Partager Floway' : 'Préférences conducteur';
+
   return (
     <>
       {panel && (
         <div className="flowayActionBackdrop" onClick={() => setPanel(null)}>
           <section className="flowayActionSheet" onClick={event => event.stopPropagation()}>
             <div className="flowayActionHead">
-              <div>
-                <small>{panel === 'menu' ? 'FLOWAY' : panel === 'alerts' ? 'SIGNAL ROUTIER' : panel === 'community' ? 'COMMUNAUTÉ' : 'PROFIL'}</small>
-                <strong>{panel === 'menu' ? 'Navigation Floway' : panel === 'alerts' ? 'Alertes du trajet' : panel === 'community' ? 'La route vue par les voyageurs' : 'Préférences conducteur'}</strong>
-              </div>
+              <div><small>{panelEyebrow}</small><strong>{panelTitle}</strong></div>
               <button onClick={() => setPanel(null)} aria-label="Fermer">×</button>
             </div>
 
@@ -238,6 +261,7 @@ export default function InteractionLayer() {
                   <button onClick={() => { setPanel(null); document.getElementById('v3stations')?.scrollIntoView({ behavior: 'smooth' }); }}><span>⛽</span><b>Stations</b><small>Voir tous les arrêts</small></button>
                   <button onClick={() => setPanel('community')}><span>◉</span><b>Communauté</b><small>Avis et signal terrain</small></button>
                   <button onClick={() => setPanel('profile')}><span>○</span><b>Profil</b><small>Préférences conducteur</small></button>
+                  <button onClick={() => setPanel('share')}><span>▦</span><b>Partager Floway</b><small>QR code · lien · partage téléphone</small></button>
                 </div>
                 <div className="flowayFavoriteRoutes">
                   <div className="flowayFavoriteHead"><span>☆ ITINÉRAIRES FAVORIS</span><small>Stockés uniquement sur ce téléphone</small></div>
@@ -251,16 +275,28 @@ export default function InteractionLayer() {
               </>
             )}
 
+            {panel === 'share' && (
+              <div className="flowaySharePanel">
+                <div className="flowayQrWrap">
+                  {shareUrl && <img src={`https://quickchart.io/qr?text=${encodeURIComponent(shareUrl)}&size=260&margin=2`} alt="QR code pour ouvrir Floway" />}
+                </div>
+                <h3>Ouvre Floway sur un autre téléphone</h3>
+                <p>Scanne ce QR code avec l’appareil photo de l’autre téléphone, ou partage directement le lien.</p>
+                <div className="flowayShareUrl">{shareUrl}</div>
+                <div className="flowayShareActions">
+                  <button onClick={shareApp}>↗ PARTAGER</button>
+                  <button onClick={copyShareLink}>⧉ COPIER LE LIEN</button>
+                </div>
+                <small className="flowayShareHint">Le QR code pointe toujours vers l’adresse Floway actuellement ouverte.</small>
+              </div>
+            )}
+
             {panel === 'alerts' && (
               <div className="flowayAlertContent">
                 <div className="flowayAlertState"><i /> <span>Surveillance active</span></div>
                 <h3>Floway surveille ce qui peut modifier votre arrêt.</h3>
                 <p>Trafic, incidents, disponibilité des stations et changements importants alimentent progressivement la recommandation.</p>
-                <div className="flowayAlertRows">
-                  <div><span>Trafic</span><b>Actif / couverture partielle</b></div>
-                  <div><span>Stations</span><b>Prix officiels</b></div>
-                  <div><span>GPS trajet</span><b>Disponible sur mobile</b></div>
-                </div>
+                <div className="flowayAlertRows"><div><span>Trafic</span><b>Actif / couverture partielle</b></div><div><span>Stations</span><b>Prix officiels</b></div><div><span>GPS trajet</span><b>Disponible sur mobile</b></div></div>
               </div>
             )}
 
@@ -269,11 +305,7 @@ export default function InteractionLayer() {
                 <div className="flowayAlertState"><i /> <span>Communauté Floway</span></div>
                 <h3>Avis, photos et informations terrain.</h3>
                 <p>Cette zone accueillera les retours voyageurs sur la propreté, l’affluence, la restauration, les bornes et la qualité réelle des aires.</p>
-                <div className="flowayAlertRows">
-                  <div><span>Avis voyageurs</span><b>Interface prête</b></div>
-                  <div><span>Photos</span><b>À connecter</b></div>
-                  <div><span>Signalement terrain</span><b>À connecter</b></div>
-                </div>
+                <div className="flowayAlertRows"><div><span>Avis voyageurs</span><b>Interface prête</b></div><div><span>Photos</span><b>À connecter</b></div><div><span>Signalement terrain</span><b>À connecter</b></div></div>
               </div>
             )}
 
@@ -282,11 +314,7 @@ export default function InteractionLayer() {
                 <div className="flowayAlertState"><i /> <span>Profil conducteur local</span></div>
                 <h3>Pas de compte obligatoire pour l’instant.</h3>
                 <p>Véhicule, priorité de pause et itinéraires favoris sont mémorisés localement sur cet appareil.</p>
-                <div className="flowayAlertRows">
-                  <div><span>Véhicule</span><b>Mémorisé localement</b></div>
-                  <div><span>Préférence d’arrêt</span><b>Mémorisée localement</b></div>
-                  <div><span>Itinéraires favoris</span><b>{savedRoutes.length}</b></div>
-                </div>
+                <div className="flowayAlertRows"><div><span>Véhicule</span><b>Mémorisé localement</b></div><div><span>Préférence d’arrêt</span><b>Mémorisée localement</b></div><div><span>Itinéraires favoris</span><b>{savedRoutes.length}</b></div></div>
               </div>
             )}
           </section>
