@@ -19,6 +19,7 @@ import './station-fuel-layer.css';
 import './dynamic-reference.css';
 import './road-navigation.css';
 import './live-copilot.css';
+import './motorway-navigation.css';
 import './quick-fuel.css';
 import InteractionLayer from './interaction-layer';
 import PwaInstall from './pwa-install';
