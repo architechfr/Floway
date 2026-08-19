@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+import { timeoutFetch } from '../_lib/http';
+
+// Masque le `fetch` global pour ce module : tout appel sortant est abandonné
+// automatiquement au-delà du délai, sans modifier les points d'appel.
+const fetch = timeoutFetch();
+
 type GeoFeature={geometry?:{coordinates?:[number,number]}};
 type PoiResult={dist?:number;poi?:{name?:string;categories?:string[];brands?:Array<{name?:string}>;phone?:string;url?:string;openingHours?:unknown};address?:{freeformAddress?:string;municipality?:string};position?:{lat?:number;lon?:number}};
 

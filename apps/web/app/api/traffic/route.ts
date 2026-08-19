@@ -1,5 +1,11 @@
 import { NextResponse } from 'next/server';
 
+import { timeoutFetch } from '../_lib/http';
+
+// Masque le `fetch` global pour ce module : tout appel sortant est abandonné
+// automatiquement au-delà du délai, sans modifier les points d'appel.
+const fetch = timeoutFetch();
+
 const TRAFFIC_INDEX = 'https://tipi.bison-fute.gouv.fr/bison-fute-ouvert/publicationsDIR/TRAFICOLOR-DIR/';
 const EVENTS_INDEX = 'https://tipi.bison-fute.gouv.fr/bison-fute-ouvert/publicationsDIR/Evenementiel-DIR/grt/RRN/';
 

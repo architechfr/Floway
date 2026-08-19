@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+import { timeoutFetch, clientIp, rateLimit, tooManyRequests, requireTrustedCaller } from '../_lib/http';
+
+// Masque le `fetch` global pour ce module : tout appel sortant est abandonné
+// automatiquement au-delà du délai, sans modifier les points d'appel.
+const fetch = timeoutFetch();
+
 type AiRequest = {
   trip?: {
     origin?: string;
@@ -43,7 +49,28 @@ function safeJson(value: unknown) {
   }
 }
 
+/** Taille maximale acceptee pour le corps de la requete, en octets. */
+const MAX_BODY_BYTES = 8 * 1024;
+
+/** Fenetre et plafond de la limitation de debit par IP. */
+const RATE_WINDOW_MS = 5 * 60 * 1000;
+const RATE_LIMIT = 20;
+
 export async function POST(request: NextRequest) {
+  // Cette route relaie des appels factures sur la cle Mistral du projet.
+  // Elle n'est ouverte qu'a l'application elle-meme (ou au porteur du secret
+  // partage FLOWAY_API_SECRET), avec un plafond de taille et de debit.
+  const forbidden = requireTrustedCaller(request);
+  if (forbidden) return forbidden;
+
+  const quota = rateLimit(`ai:${clientIp(request)}`, RATE_LIMIT, RATE_WINDOW_MS);
+  if (!quota.ok) return tooManyRequests(quota.retryAfterSeconds);
+
+  const declaredLength = Number(request.headers.get('content-length') || 0);
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_BODY_BYTES) {
+    return NextResponse.json({ error: 'PAYLOAD_TOO_LARGE' }, { status: 413 });
+  }
+
   const apiKey = process.env.mistralfloway || process.env.MISTRAL_API_KEY;
   if (!apiKey) {
     return NextResponse.json({ error: 'MISTRAL_KEY_MISSING' }, { status: 503 });
@@ -51,7 +78,13 @@ export async function POST(request: NextRequest) {
 
   let payload: AiRequest;
   try {
-    payload = await request.json();
+    // Le corps est lu en texte pour verifier sa taille reelle : l'en-tete
+    // content-length peut mentir ou etre absent (transfert chunked).
+    const raw = await request.text();
+    if (raw.length > MAX_BODY_BYTES) {
+      return NextResponse.json({ error: 'PAYLOAD_TOO_LARGE' }, { status: 413 });
+    }
+    payload = JSON.parse(raw);
   } catch {
     return NextResponse.json({ error: 'INVALID_JSON' }, { status: 400 });
   }
