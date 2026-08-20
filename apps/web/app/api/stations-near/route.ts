@@ -16,6 +16,12 @@ const RAYON_MAX_KM = 20;
 const RAYON_DEFAUT_KM = 8;
 
 /**
+ * Plafond de l'API Explore v2.1 d'Opendatasoft, vérifié dans sa documentation :
+ * « the maximum value for limit is 100 ».
+ */
+const FLUX_LIMIT = 100;
+
+/**
  * Stations autour d'un point, pour faire le plein avant de prendre la route.
  *
  * `/api/route` ne renvoie que les stations du couloir de l'itinéraire, à partir
@@ -39,11 +45,17 @@ export async function GET(req: NextRequest) {
 
   try {
     const u = new URL(API);
-    u.searchParams.set('limit', '60');
+    u.searchParams.set('limit', String(FLUX_LIMIT));
     u.searchParams.set('where', `within_distance(geom, geom'POINT(${lon} ${lat})', ${rayon} km)`);
+    // Sans ordre, l'API rendait un tirage arbitraire du jeu de données : 60 sur
+    // les 96 stations à moins de 8 km de Paris, et le tri par distance ne
+    // s'appliquait qu'à ce tirage. La station d'à côté pouvait donc n'être
+    // jamais proposée. `distance()` est utilisable en `order_by` d'après la
+    // documentation ODSQL — vérifié, pas supposé.
+    u.searchParams.set('order_by', `distance(geom, geom'POINT(${lon} ${lat})')`);
     const r = await fetch(u, { headers: { Accept: 'application/json' }, next: { revalidate: 600 } });
     if (!r.ok) throw new Error(`NEAR_${r.status}`);
-    const d = (await r.json()) as { results?: FuelRecord[] };
+    const d = (await r.json()) as { results?: FuelRecord[]; total_count?: number };
 
     const stations = (d.results || [])
       .map((record) => {
@@ -79,6 +91,10 @@ export async function GET(req: NextRequest) {
       official: true,
       fuel: carburant,
       radiusKm: rayon,
+      // Ce qui manque reste explicite : au-delà de la limite de l'API, la liste
+      // est celle des plus proches, pas la totalité de la zone.
+      truncated: (d.total_count ?? 0) > FLUX_LIMIT,
+      foundCount: stations.length,
       stations: stations.slice(0, 12),
     });
   } catch (e) {

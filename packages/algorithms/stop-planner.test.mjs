@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { arrivalAtKm, buildJourney, mealsDuringTrip, rankStops, MIN_STOP_SPACING_KM } from './stop-planner.mjs';
+import { arrivalAtKm, buildJourney, mealsDuringTrip, rankStops, waitLevel, MIN_STOP_SPACING_KM } from './stop-planner.mjs';
 import { planEnergy } from './energy-model.mjs';
 import { formatTimeInZone, instantFromLocalInput } from './trip-clock.mjs';
 
@@ -337,4 +337,56 @@ test('sans station trouvée près du départ, on retombe sur l’arrêt en route
   const { steps } = buildJourney({ plan, distanceKm: 500, durationMin: 300, departureStation: null });
   assert.equal(steps.filter((s) => s.kind === 'carburant').length, 1);
   assert.equal(steps[0].label, 'Ravitaillement');
+});
+
+// --- affluence dans le classement -------------------------------------------
+
+test('affluence : trois niveaux, et rien d’inventé sans estimation', () => {
+  assert.equal(waitLevel(2).id, 'faible');
+  assert.equal(waitLevel(4).id, 'faible');
+  assert.equal(waitLevel(5).id, 'moderee');
+  assert.equal(waitLevel(7).id, 'moderee');
+  assert.equal(waitLevel(8).id, 'forte');
+  assert.equal(waitLevel(undefined), null);
+  assert.equal(waitLevel(null), null);
+  assert.equal(waitLevel(Number.NaN), null);
+});
+
+test('à égalité par ailleurs, la station la moins fréquentée passe devant', () => {
+  const calme = station('calme', 200, { waitMin: 2 });
+  const bondee = station('bondee', 210, { waitMin: 12 });
+  const plan = trajet([bondee, calme]);
+  assert.equal(plan.stops[0].station.id, 'calme');
+  // Le classement doit pouvoir se justifier : le niveau est rendu avec lui.
+  assert.equal(plan.stops[0].waitLevel.id, 'faible');
+  assert.equal(plan.stops.find((s) => s.station.id === 'bondee').waitLevel.id, 'forte');
+});
+
+test('l’affluence n’est citée que si la station se détache du lot', () => {
+  const plan = trajet([
+    station('calme', 200, { waitMin: 2 }),
+    station('moyenne', 260, { waitMin: 7 }),
+    station('bondee', 320, { waitMin: 12 }),
+  ]);
+  const raisons = (id) => plan.stops.find((s) => s.station.id === id).reasons.join(' | ');
+  assert.match(raisons('calme'), /affluence prévue faible/);
+  assert.match(raisons('bondee'), /affluence prévue forte/);
+  assert.doesNotMatch(raisons('moyenne'), /affluence/);
+});
+
+test('une seule station : aucune comparaison d’affluence n’est affirmée', () => {
+  const plan = trajet([station('seule', 200, { waitMin: 12 })]);
+  assert.doesNotMatch(plan.stops[0].reasons.join(' | '), /affluence/);
+  // Le niveau reste disponible, il n'est simplement pas présenté comme un argument.
+  assert.equal(plan.stops[0].waitLevel.id, 'forte');
+});
+
+test('le carburant nécessaire pèse plus lourd qu’une affluence faible', () => {
+  // 40 L a 8 L/100 avec 60 % : 250 km avant la reserve.
+  const energie = planEnergy({ capacity: 40, consumption: 8, levelPct: 60, distanceKm: 500 });
+  const utile = station('utile', 240, { waitMin: 12 });
+  const calmeInutile = station('trop-loin', 460, { waitMin: 2 });
+  const plan = trajet([calmeInutile, utile], { energie });
+  assert.equal(plan.fuelLimitKm, 250);
+  assert.equal(plan.stops[0].station.id, 'utile');
 });

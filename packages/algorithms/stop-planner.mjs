@@ -109,6 +109,32 @@ export function mealsDuringTrip(departureAt, durationMin, timeZone = TRIP_TIME_Z
 const pad = (n) => String(n).padStart(2, '0');
 
 /**
+ * Seuils d'affluence, en minutes d'attente estimées par le modèle Floway.
+ *
+ * Ils vivent ici et non dans l'interface : le classement et l'affichage
+ * doivent parler de la même chose. Le modèle produit un ordre de grandeur,
+ * pas une file d'attente mesurée — d'où trois niveaux et non un chiffre au
+ * dixième de minute.
+ */
+export const WAIT_LEVELS = [
+  { id: 'faible', label: 'Faible', icon: '🟢', upTo: 4 },
+  { id: 'moderee', label: 'Modérée', icon: '🟠', upTo: 7 },
+  { id: 'forte', label: 'Forte', icon: '🔴', upTo: Infinity },
+];
+
+/**
+ * Niveau d'affluence d'une station, ou `null` si le modèle n'a rien produit.
+ *
+ * L'absence d'estimation reste explicite : aucun niveau n'est inventé pour
+ * une station dont l'attente est inconnue.
+ */
+export function waitLevel(waitMin) {
+  if (!Number.isFinite(waitMin)) return null;
+  const level = WAIT_LEVELS.find((l) => waitMin <= l.upTo) || WAIT_LEVELS.at(-1);
+  return { id: level.id, label: level.label, icon: level.icon, waitMin };
+}
+
+/**
  * Classe les stations à venir selon le besoin réel.
  *
  * @param {object} input
@@ -217,6 +243,20 @@ export function rankStops({
       }
     }
 
+    // --- affluence -----------------------------------------------------------
+    // Le modèle d'attente pesait déjà dans le score, mais sans jamais le dire :
+    // un arrêt pouvait être écarté pour son affluence sans que rien à l'écran
+    // ne l'explique. Le niveau est donc rendu avec le classement.
+    const crowd = waitLevel(station.waitMin);
+    if (crowd && ahead.length > 1 && waits && waits.max !== waits.min) {
+      // Ne se prononcer que si la station se détache du lot : dire « affluence
+      // modérée » de toutes les stations n'apprend rien.
+      const relatif = norm(station.waitMin, waits);
+      if (relatif <= 0.25 || relatif >= 0.75) {
+        reasons.push(`affluence prévue ${crowd.label.toLowerCase()} à votre heure de passage`);
+      }
+    }
+
     const penalty =
       WEIGHTS.wait * norm(station.waitMin, waits) +
       WEIGHTS.detour * norm(station.detourMin, detours) +
@@ -229,6 +269,8 @@ export function rankStops({
       arrivalAt: at,
       openStatus: status,
       meal: mealAtThisStop,
+      /** Niveau d'affluence estimé, ou null si le modèle n'a rien produit. */
+      waitLevel: crowd,
       /** Pourquoi cet arrêt vaut le coup, en clair. */
       reasons,
       /** Plus bas = meilleur. */

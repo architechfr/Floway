@@ -4,6 +4,14 @@ export const MEAL_WINDOWS: readonly { id: string; label: string; from: number; t
 export const MIN_MEAL_OVERLAP_MIN: number;
 export const WEIGHTS: Record<string, number>;
 
+export type WaitLevelId = 'faible' | 'moderee' | 'forte';
+export type WaitLevel = { id: WaitLevelId; label: string; icon: string; waitMin: number };
+
+export const WAIT_LEVELS: readonly { id: WaitLevelId; label: string; icon: string; upTo: number }[];
+
+/** Niveau d'affluence estimé, ou `null` si l'attente est inconnue. */
+export function waitLevel(waitMin: number | undefined | null): WaitLevel | null;
+
 export function arrivalAtKm(
   departureAt: Date,
   durationMin: number,
@@ -22,6 +30,8 @@ export type PlannedStop = {
   openStatus: 'ouvert' | 'ferme' | 'inconnu';
   /** Repas satisfait par cet arrêt, ou null. */
   meal: string | null;
+  /** Niveau d'affluence estimé, ou null si le modèle n'a rien produit. */
+  waitLevel: WaitLevel | null;
   reasons: string[];
   /** Plus bas = meilleur. */
   score: number;

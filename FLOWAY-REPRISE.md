@@ -191,8 +191,25 @@ Le code mort est supprimé (voir le nettoyage). Reste : README et `docs/ARCHITEC
 
 **Produit**
 - Catalogue véhicules FR (~300 modèles) : choix marque / modèle / motorisation, avec saisie manuelle de la capacité réservoir ou batterie et estimation proposée. Pas d'ADEME pour l'instant (décision prise).
-- Les 5 prochaines stations sur la route pendant le trajet.
-- Temps d'attente en station à intégrer au classement.
+- ~~Les 5 prochaines stations sur la route pendant le trajet.~~ Fait.
+- ~~Temps d'attente en station à intégrer au classement.~~ Fait.
+- Mesurer réellement l'attente. `wait-estimator.mjs` sait pondérer des observations horodatées, mais rien ne l'alimente : le classement s'appuie sur le modèle Floway v0, présenté comme une prédiction. La table Supabase `wait_observations` existe et n'a aucune policy.
+
+## Défaut de couverture du flux carburant — corrigé
+
+Constaté au test : sur un trajet au départ de Ferrières-en-Brie, ni l'Intermarché voisin (356 m) ni Croissy-Beaubourg (4,7 km) n'étaient proposés.
+
+Cause. `/api/route` demandait **80 enregistrements dans un rayon de 28 km** autour de chacun des 34 points échantillonnés, **sans `order_by`**. Or le flux compte 308 stations à moins de 28 km de Ferrières-en-Brie et 564 à moins de 28 km de Paris. L'API rendait donc 80 stations au hasard de l'ordre du jeu de données, et le filtre de couloir (≤ 6 km du tracé) s'appliquait à ce tirage. Mesuré sur l'API réelle : **le tirage de 80 ne contenait aucune station du couloir de 6 km. Zéro sur 80.** `/api/stations-near` avait le même défaut (60 demandées, 96 stations à moins de 8 km de Paris).
+
+Correction, vérifiée contre l'API réelle avant d'être écrite :
+- `order_by=distance(geom, geom'POINT(lon lat)')` — la fonction `distance()` est documentée comme utilisable en `select` et `order_by` dans ODSQL. Les enregistrements rendus sont désormais les plus proches, c'est-à-dire exactement ceux que le couloir retient.
+- `limit` porté à 100, plafond documenté de l'API Explore v2.1.
+- Rayon déduit de l'espacement des points au lieu d'être fixé à 28 km : `packages/algorithms/route-corridor.mjs`, testé. Un point doit couvrir `espacement / 2 + couloir`, pas davantage — au-delà il redemande ce que son voisin a déjà vu, en saturant la limite.
+- La troncature restante est signalée dans `coverage.truncated` plutôt que tue.
+
+Après correction, même point de départ : 69 stations rendues sur 69 existantes, **13 dans le couloir**, Ferrières-en-Brie et Croissy-Beaubourg comprises.
+
+Limite qui demeure, et qui n'est pas un bug : le flux du ministère **ne porte aucune enseigne**, et ne contient que les stations qui déclarent leurs prix. Un Carrefour City qui ne déclare pas n'y figure pas, et aucune station n'y est nommée « Carrefour ». C'est une limite de la source, pas du filtre.
 
 ## Règles de travail établies
 

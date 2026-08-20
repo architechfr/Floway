@@ -18,7 +18,7 @@
  */
 
 /** Reconnaît une adresse qui nomme un lieu plutôt qu'une voie. */
-const NOMME_UN_LIEU = /\b(aire|relais|centre|station|zone|za|zi|parc|port|gare|péage|peage)\b/i;
+const NOMME_UN_LIEU = /\b(aire|relais|centre|station|zone|zac|za|zi|parc|port|gare|péage|peage)\b/i;
 
 /** Une adresse tout en capitales se lit mal : on la ramène en casse de titre. */
 function casseNaturelle(valeur: string): string {

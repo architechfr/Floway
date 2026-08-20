@@ -7,6 +7,30 @@ type InstallPromptEvent = Event & {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
 };
 
+/**
+ * Lecture et ecriture tolerantes du stockage local.
+ *
+ * En navigation privee, ou quand le navigateur bloque le stockage, le simple
+ * acces a `localStorage` leve. Ce composant est monte dans le layout : une
+ * exception ici remontait jusqu'a la racine React et blanchissait toute
+ * l'application, pour une banniere d'installation.
+ */
+function lireStockage(cle: string): string | null {
+  try {
+    return localStorage.getItem(cle);
+  } catch {
+    return null;
+  }
+}
+
+function ecrireStockage(cle: string, valeur: string) {
+  try {
+    localStorage.setItem(cle, valeur);
+  } catch {
+    // Stockage indisponible : le choix ne sera pas memorise, sans plus.
+  }
+}
+
 export default function PwaInstall() {
   const [deferredPrompt, setDeferredPrompt] = useState<InstallPromptEvent | null>(null);
   const [showIosHelp, setShowIosHelp] = useState(false);
@@ -26,7 +50,7 @@ export default function PwaInstall() {
     setInstalled(standalone);
 
     if (!standalone) {
-      const dismissedAt = Number(localStorage.getItem('floway-install-dismissed') || 0);
+      const dismissedAt = Number(lireStockage('floway-install-dismissed') || 0);
       if (!dismissedAt || Date.now() - dismissedAt > 3 * 24 * 60 * 60 * 1000) window.setTimeout(() => setVisible(true), 1800);
     }
 
@@ -106,7 +130,7 @@ export default function PwaInstall() {
   }
 
   function dismiss() {
-    localStorage.setItem('floway-install-dismissed', String(Date.now()));
+    ecrireStockage('floway-install-dismissed', String(Date.now()));
     setVisible(false);
   }
 

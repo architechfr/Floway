@@ -9,6 +9,8 @@ export {
   MEAL_WINDOWS,
   MIN_MEAL_OVERLAP_MIN,
   WEIGHTS,
+  WAIT_LEVELS,
+  waitLevel,
   arrivalAtKm,
   mealsDuringTrip,
   rankStops,
@@ -17,4 +19,4 @@ export {
   MAX_DRIVING_STRETCH_MIN,
 } from '../../../../../packages/algorithms/stop-planner.mjs';
 
-export type { PlannedStop, StopPlan, JourneyStep } from '../../../../../packages/algorithms/stop-planner.mjs';
+export type { PlannedStop, StopPlan, JourneyStep, WaitLevel, WaitLevelId } from '../../../../../packages/algorithms/stop-planner.mjs';
