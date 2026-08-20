@@ -31,11 +31,11 @@ import StationFuelLayer from './station-fuel-layer';
 import SpeedLimitLayer from './speed-limit-layer';
 import LiveCopilotLayer from './live-copilot-layer';
 import SessionRestoreLayer from './session-restore-layer';
-import CurrentLocationOrigin from './current-location-origin';
 import QuickFuelLayer from './quick-fuel-layer';
 import SafetyAlertLayer from './safety-alert-layer';
 import SavedPlacesLayer from './saved-places-layer';
 import NumericInputFix from './numeric-input-fix';
+import { FlowayStoreProvider } from './state/floway-store';
 
 export const metadata: Metadata = {
   title: 'Floway — Le meilleur arrêt sur votre route',
@@ -50,20 +50,23 @@ export const metadata: Metadata = {
 export const viewport: Viewport = { width: 'device-width', initialScale: 1, viewportFit: 'cover', themeColor: '#05090c' };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  // FlowayStoreProvider enveloppe toute l'application : les layers restants
+  // y puiseront leur etat au fur et a mesure de leur migration (phase 1).
   return <html lang="fr"><body>
-    {children}
-    <InteractionLayer />
-    <SessionRestoreLayer />
-    <CurrentLocationOrigin />
-    <SavedPlacesLayer />
-    <NumericInputFix />
-    <QuickFuelLayer />
-    <StationEnrichmentLayer />
-    <RoutePriceLayer />
-    <StationFuelLayer />
-    <SpeedLimitLayer />
-    <LiveCopilotLayer />
-    <SafetyAlertLayer />
-    <PwaInstall />
+    <FlowayStoreProvider>
+      {children}
+      <InteractionLayer />
+      <SessionRestoreLayer />
+      <SavedPlacesLayer />
+      <NumericInputFix />
+      <QuickFuelLayer />
+      <StationEnrichmentLayer />
+      <RoutePriceLayer />
+      <StationFuelLayer />
+      <SpeedLimitLayer />
+      <LiveCopilotLayer />
+      <SafetyAlertLayer />
+      <PwaInstall />
+    </FlowayStoreProvider>
   </body></html>;
 }
