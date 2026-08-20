@@ -136,3 +136,31 @@
   color: #9fb2b5;
   font-size: 0.6rem;
 }
+
+/* Repères sélectionnables. L'overlay reste transparent aux évènements pour
+   que le déplacement de la carte fonctionne partout ailleurs ; seuls les
+   repères reprennent la main. */
+.clickable {
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.hit {
+  fill: transparent;
+  stroke: none;
+}
+
+.clickable:hover circle:not(.hit) {
+  stroke: #ff9a5c;
+  stroke-width: 3.5;
+}
+
+.clickable:focus {
+  outline: none;
+}
+
+.clickable:focus-visible circle:not(.hit) {
+  stroke: #ff9a5c;
+  stroke-width: 4;
+  filter: drop-shadow(0 0 6px rgba(255, 154, 92, 0.9));
+}

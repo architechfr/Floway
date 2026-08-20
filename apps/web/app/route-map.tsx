@@ -54,9 +54,11 @@ type Props = {
   stops?: MapStop[];
   live?: { lat: number; lon: number } | null;
   height?: number;
+  /** Appele quand un repere est active, au clic ou au clavier. */
+  onSelectStop?: (id: string) => void;
 };
 
-export default function RouteMap({ geometry, stops = [], live = null, height = 280 }: Props) {
+export default function RouteMap({ geometry, stops = [], live = null, height = 280, onSelectStop }: Props) {
   const frame = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 0, height });
   const [layer, setLayer] = useState<LayerId>('plan');
@@ -163,17 +165,48 @@ export default function RouteMap({ geometry, stops = [], live = null, height = 2
         ))}
 
         {view && size.width > 0 && (
-          <svg className={styles.overlay} width={size.width} height={size.height} aria-hidden="true">
-            <path className={styles.halo} d={line} />
-            <path className={styles.line} d={line} />
+          <svg
+            className={styles.overlay}
+            width={size.width}
+            height={size.height}
+            role={onSelectStop ? 'group' : 'presentation'}
+            aria-label={onSelectStop ? 'Arrêts sur l’itinéraire' : undefined}
+            aria-hidden={onSelectStop ? undefined : true}
+          >
+            <path className={styles.halo} d={line} aria-hidden="true" />
+            <path className={styles.line} d={line} aria-hidden="true" />
             {start && <circle className={styles.start} cx={start.x} cy={start.y} r={6} />}
             {end && <circle className={styles.end} cx={end.x} cy={end.y} r={6} />}
-            {placed.map(({ stop, at }) => (
-              <g key={stop.id} className={styles.stop} data-kind={stop.kind || 'confort'}>
-                <circle cx={at.x} cy={at.y} r={7} />
-                {stop.highway && <rect x={at.x - 9} y={at.y - 15} width={18} height={10} rx={2} />}
-              </g>
-            ))}
+            {placed.map(({ stop, at }) => {
+              const actionnable = Boolean(onSelectStop);
+              const activer = () => onSelectStop?.(stop.id);
+              return (
+                <g
+                  key={stop.id}
+                  className={`${styles.stop} ${actionnable ? styles.clickable : ''}`}
+                  data-kind={stop.kind || 'confort'}
+                  role={actionnable ? 'button' : undefined}
+                  tabIndex={actionnable ? 0 : undefined}
+                  aria-label={actionnable ? `Voir ${stop.label}` : undefined}
+                  onClick={actionnable ? activer : undefined}
+                  // Sans cela, appuyer sur un repere demarre un deplacement de
+                  // la carte et le clic se perd.
+                  onPointerDown={actionnable ? (e) => e.stopPropagation() : undefined}
+                  onKeyDown={
+                    actionnable
+                      ? (e) => {
+                          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activer(); }
+                        }
+                      : undefined
+                  }
+                >
+                  {/* Cible tactile confortable : le repere visible fait 14 px. */}
+                  {actionnable && <circle className={styles.hit} cx={at.x} cy={at.y} r={18} />}
+                  <circle cx={at.x} cy={at.y} r={7} />
+                  {stop.highway && <rect x={at.x - 9} y={at.y - 15} width={18} height={10} rx={2} />}
+                </g>
+              );
+            })}
             {livePoint && (
               <>
                 <circle className={styles.livePulse} cx={livePoint.x} cy={livePoint.y} r={13} />
