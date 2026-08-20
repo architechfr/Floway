@@ -36,7 +36,10 @@ export type EnergyPlan = {
   refuelStops: number | null;
   /** Quantité à acheter en route (L ou kWh). */
   totalQuantityToBuy: number | null;
-  estimatedCost: number | null;
+  /** Coût de l'énergie consommée sur le trajet. */
+  tripCost: number | null;
+  /** Coût de ce qu'il faut acheter en route. Nul si le départ suffit. */
+  purchaseCost: number | null;
   /** Kilomètre auquel le premier arrêt devient nécessaire. */
   firstStopAtKm: number | null;
 };
@@ -60,7 +63,8 @@ export type TripPlan = {
   fuel: EnergyPlan | null;
   battery: EnergyPlan | null;
   stops: number | null;
-  totalCost: number | null;
+  totalTripCost: number | null;
+  totalPurchaseCost: number | null;
   missing: string[];
   complete: boolean;
 };

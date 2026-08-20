@@ -110,7 +110,8 @@ export function planEnergy({ capacity, consumption, levelPct, distanceKm, reserv
       reachesDestination: null,
       refuelStops: null,
       totalQuantityToBuy: null,
-      estimatedCost: null,
+      tripCost: null,
+      purchaseCost: null,
       firstStopAtKm: null,
     };
   }
@@ -152,7 +153,11 @@ export function planEnergy({ capacity, consumption, levelPct, distanceKm, reserv
     reachesDestination,
     refuelStops,
     totalQuantityToBuy: round(totalQuantityToBuy, 2),
-    estimatedCost: isPositive(unitPrice) ? round(totalQuantityToBuy * unitPrice, 2) : null,
+    // Deux couts distincts, souvent confondus : ce que le trajet consomme au
+    // total, et ce qu'il faut effectivement acheter en route. Sur un plein de
+    // depart suffisant, le second vaut zero alors que le premier ne l'est pas.
+    tripCost: isPositive(unitPrice) ? round(needed * unitPrice, 2) : null,
+    purchaseCost: isPositive(unitPrice) ? round(totalQuantityToBuy * unitPrice, 2) : null,
     firstStopAtKm: refuelStops === 0 ? null : round(usableRemainingRangeKm, 1),
   };
 }
@@ -226,7 +231,8 @@ export function planTrip({
     fuelPlan.missing.forEach((m) => missing.push(`carburant:${m}`));
   }
 
-  const costs = [fuelPlan?.estimatedCost, electricPlan?.estimatedCost].filter(
+  const tripCosts = [fuelPlan?.tripCost, electricPlan?.tripCost].filter((c) => typeof c === 'number');
+  const purchaseCosts = [fuelPlan?.purchaseCost, electricPlan?.purchaseCost].filter(
     (c) => typeof c === 'number',
   );
 
@@ -246,7 +252,12 @@ export function planTrip({
     fuel: fuelPlan,
     battery: electricPlan,
     stops,
-    totalCost: costs.length ? round(costs.reduce((a, b) => a + b, 0), 2) : null,
+    /** Cout de l'energie consommee sur tout le trajet. */
+    totalTripCost: tripCosts.length ? round(tripCosts.reduce((a, b) => a + b, 0), 2) : null,
+    /** Cout de ce qu'il faut acheter en route, hors energie deja a bord. */
+    totalPurchaseCost: purchaseCosts.length
+      ? round(purchaseCosts.reduce((a, b) => a + b, 0), 2)
+      : null,
     missing,
     /** Vrai quand tout ce qui est nécessaire au calcul est présent. */
     complete: missing.length === 0,
