@@ -1,0 +1,135 @@
+/*
+ * Destinations rapides de la fenetre d'itineraire.
+ *
+ * Reprise des styles de `saved-places.css`, en module. Cette feuille globale
+ * portait aussi `.flowayOriginAuto`, `.flowayOriginRaw` et
+ * `.flowayOriginToast`, orphelines depuis la migration du layer
+ * `current-location-origin` vers `origin-field` : elles disparaissent avec elle.
+ */
+
+.box {
+  margin-top: 10px;
+  padding: 11px;
+  border: 1px solid rgba(86, 132, 118, 0.35);
+  border-radius: 14px;
+  background: #07140f;
+}
+
+.box > small {
+  display: block;
+  color: #7fa293;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 1.1px;
+  margin-bottom: 8px;
+}
+
+.row {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.row + .row {
+  margin-top: 7px;
+}
+
+.place {
+  border: 1px solid #345247;
+  border-radius: 999px;
+  background: #0b1d16;
+  color: #e9efe9;
+  padding: 8px 10px;
+  font-size: 9px;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.ready {
+  border-color: #48c977;
+  background: #0d281c;
+}
+
+.empty {
+  border-style: dashed;
+  color: #9bad9f;
+}
+
+.regular {
+  background: #0a1712;
+}
+
+.add {
+  color: #f1a36f;
+  border-color: #6c4731;
+}
+
+/* Retrait d'un favori : collé à sa pastille, discret tant qu'on ne le vise pas. */
+.remove {
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: none;
+  color: #7b8f86;
+  padding: 6px 7px;
+  font-size: 10px;
+  line-height: 1;
+  margin-left: -5px;
+  cursor: pointer;
+}
+
+.remove:hover,
+.remove:focus-visible {
+  color: #ffb0a0;
+  border-color: #6b3b33;
+}
+
+/* Saisie en ligne, à la place des window.prompt() bloquants de l'ancien layer. */
+.form {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+  align-items: center;
+  width: 100%;
+  margin-top: 8px;
+}
+
+.form input {
+  flex: 1 1 130px;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid #2d454b;
+  border-radius: 10px;
+  background: #050d10;
+  color: white;
+  font-size: 11px;
+}
+
+.confirm {
+  border: 0;
+  border-radius: 10px;
+  background: #163d2b;
+  color: #7df0a8;
+  padding: 9px 12px;
+  font-size: 9px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.cancel {
+  border: 1px solid #345247;
+  border-radius: 10px;
+  background: #0a1712;
+  color: #9bad9f;
+  padding: 9px 11px;
+  font-size: 9px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.place:focus-visible,
+.confirm:focus-visible,
+.cancel:focus-visible {
+  outline: 2px solid #48c977;
+  outline-offset: 2px;
+}

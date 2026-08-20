@@ -1,0 +1,112 @@
+/*
+ * Feuille de correction rapide du niveau de carburant.
+ *
+ * Reprise a l'identique de `quick-fuel.css`, en module : le style ne fuit
+ * plus dans le reste de l'application et disparait avec le composant.
+ */
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 160;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.66);
+  backdrop-filter: blur(10px);
+}
+
+.sheet {
+  width: min(430px, 100%);
+  padding: 18px 18px 24px;
+  border: 1px solid #355146;
+  border-radius: 24px 24px 0 0;
+  background: linear-gradient(180deg, #10251d, #07120e);
+  box-shadow: 0 -22px 70px rgba(0, 0, 0, 0.5);
+  color: #f5ead0;
+}
+
+.sheet header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.sheet header small {
+  display: block;
+  color: #d48a4f;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 1.3px;
+}
+
+.sheet header strong {
+  display: block;
+  margin-top: 4px;
+  font-size: 21px;
+}
+
+.close {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid #44594f;
+  background: #0a1712;
+  color: #eadfc8;
+  font-size: 20px;
+}
+
+.value {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 18px;
+  margin: 22px 0 12px;
+}
+
+.value b {
+  font-size: 54px;
+  line-height: 1;
+  color: #ff9d62;
+}
+
+.value span {
+  max-width: 180px;
+  color: #8da097;
+  font-size: 9px;
+  line-height: 1.45;
+  text-align: right;
+}
+
+.slider {
+  width: 100%;
+  accent-color: #ff8f52;
+}
+
+.steps {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin: 14px 0;
+}
+
+.steps button {
+  min-height: 44px;
+  border: 1px solid #31483e;
+  border-radius: 12px;
+  background: #0a1813;
+  color: #f0e5cd;
+  font-weight: 900;
+}
+
+.done {
+  width: 100%;
+  min-height: 48px;
+  border: 0;
+  border-radius: 14px;
+  background: #ff8f52;
+  color: #09110d;
+  font-weight: 1000;
+  letter-spacing: 0.5px;
+}

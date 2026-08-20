@@ -116,8 +116,6 @@ export default function PwaInstall() {
     setUpdating(true);
     updatingRef.current = true;
     try {
-      const session = localStorage.getItem('floway:active-session');
-      if (session) localStorage.setItem('floway:resume-after-update', session);
       localStorage.setItem('floway:update-started-at', String(Date.now()));
     } catch {}
     worker.postMessage({ type: 'FLOWAY_SKIP_WAITING' });

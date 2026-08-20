@@ -1,0 +1,66 @@
+/*
+ * Synthese des prix carburant sur le trajet.
+ *
+ * Reprise des styles de `route-price.css`, en module. Le reste de cette
+ * feuille globale redefinissait `.v3routeTitle` — entierement recouvert par
+ * `dynamic-reference.css`, charge apres — et masquait `.v3routeTitle em` et
+ * `.v3modifyRoute`, deux elements desormais retires du balisage.
+ */
+
+.ribbon {
+  margin: 16px 0 0;
+  display: grid;
+  grid-template-columns: minmax(220px, 1.4fr) repeat(3, minmax(130px, 1fr));
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid #284047;
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(7, 19, 23, 0.96), rgba(5, 13, 16, 0.96));
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.24);
+}
+
+.ribbon > div {
+  padding: 12px 14px;
+  border: 1px solid #21363c;
+  border-radius: 13px;
+  background: #061014;
+}
+
+.ribbon span,
+.ribbon small {
+  display: block;
+}
+
+.ribbon span {
+  font-size: 9px;
+  letter-spacing: 1.5px;
+  color: #ff9656;
+  font-weight: 900;
+}
+
+.ribbon strong {
+  display: block;
+  font-size: 17px;
+  margin-top: 4px;
+}
+
+.ribbon small {
+  color: #87999d;
+  font-size: 10px;
+}
+
+.ribbon b {
+  display: block;
+  margin-top: 5px;
+  font-size: 18px;
+  color: #4be28e;
+}
+
+@media (max-width: 760px) {
+  .ribbon {
+    grid-template-columns: 1fr 1fr;
+  }
+  .ribbon > div:first-child {
+    grid-column: 1 / -1;
+  }
+}

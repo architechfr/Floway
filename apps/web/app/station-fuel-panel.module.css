@@ -1,0 +1,72 @@
+/* Prix carburants officiels d'une station. Repris de `station-fuel-layer.css`. */
+
+.panel {
+  margin: 18px 0;
+  padding: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 22px;
+  background: linear-gradient(145deg, rgba(8, 19, 20, 0.95), rgba(7, 13, 16, 0.98));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-end;
+  margin-bottom: 14px;
+}
+
+.head > div { display: grid; gap: 3px; }
+.head span { font-size: 11px; letter-spacing: 0.18em; color: #f58b4a; font-weight: 800; }
+.head strong { font-size: 15px; color: #f7f0df; }
+.head small { font-size: 11px; color: #849693; text-align: right; }
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.card {
+  position: relative;
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  background: rgba(3, 10, 12, 0.82);
+  display: grid;
+  gap: 12px;
+  min-height: 112px;
+}
+
+.card > div { display: grid; gap: 3px; }
+.card strong { font-size: 15px; color: #f5f0e4; }
+.card small { font-size: 10px; color: #81918e; }
+.card > b { font-size: 22px; color: #fff; font-family: Georgia, serif; }
+.card b em { font-size: 11px; font-style: normal; color: #9ca9a7; }
+
+.card > span {
+  justify-self: start;
+  padding: 4px 7px;
+  border-radius: 999px;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #a7b2af;
+}
+
+.fresh { border-color: rgba(64, 205, 113, 0.28); }
+.fresh > span { color: #62dc86; border-color: rgba(64, 205, 113, 0.28); background: rgba(64, 205, 113, 0.08); }
+.aging { border-color: rgba(239, 169, 69, 0.3); }
+.aging > span { color: #efb154; border-color: rgba(239, 169, 69, 0.3); background: rgba(239, 169, 69, 0.08); }
+.old { border-color: rgba(231, 90, 73, 0.32); }
+.old > span { color: #ee7466; border-color: rgba(231, 90, 73, 0.32); background: rgba(231, 90, 73, 0.08); }
+
+.empty { margin: 0; color: #a0adaa; font-size: 13px; }
+
+@media (max-width: 760px) {
+  .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .head { align-items: flex-start; flex-direction: column; }
+  .head small { text-align: left; }
+}
