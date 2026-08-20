@@ -11,8 +11,7 @@
  * l'appel réseau part avec la bonne valeur sans interception.
  */
 
-import { useEffect } from 'react';
-import { useFlowayStore } from './state/floway-store';
+import { useOriginAuto } from './state/floway-store';
 import styles from './origin-field.module.css';
 
 type Props = {
@@ -22,24 +21,7 @@ type Props = {
 };
 
 export default function OriginField({ value, onChange, disabled }: Props) {
-  const { originMode, setOriginMode, geoOrigin, geoOriginIsFresh, geoStatus, geoMessage, locate } =
-    useFlowayStore();
-
-  const auto = originMode === 'auto';
-
-  // À l'ouverture du formulaire en mode automatique, on relance une
-  // localisation si la dernière position connue est périmée.
-  useEffect(() => {
-    if (auto && !geoOriginIsFresh && geoStatus === 'idle') locate();
-  }, [auto, geoOriginIsFresh, geoStatus, locate]);
-
-  // Le libellé GPS devient la valeur du champ : c'est lui qui partira dans la
-  // requête, sans que personne n'ait à réécrire l'URL après coup.
-  useEffect(() => {
-    if (auto && geoOrigin && geoOrigin.label !== value) onChange(geoOrigin.label);
-  }, [auto, geoOrigin, value, onChange]);
-
-  const failed = geoStatus === 'denied' || geoStatus === 'unavailable';
+  const { auto, failed, geoMessage, toggle } = useOriginAuto(value, onChange);
 
   return (
     <div className={styles.field}>
@@ -68,14 +50,7 @@ export default function OriginField({ value, onChange, disabled }: Props) {
           type="button"
           className={styles.toggle}
           disabled={disabled}
-          onClick={() => {
-            if (auto) {
-              setOriginMode('manual');
-            } else {
-              setOriginMode('auto');
-              locate();
-            }
-          }}
+          onClick={toggle}
         >
           {auto ? 'AUTRE DÉPART' : 'MA POSITION'}
         </button>

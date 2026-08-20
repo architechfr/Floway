@@ -200,6 +200,45 @@ export function FlowayStoreProvider({ children }: { children: ReactNode }) {
   return <FlowayStoreContext.Provider value={value}>{children}</FlowayStoreContext.Provider>;
 }
 
+/**
+ * Branche un champ « Départ » sur la localisation automatique.
+ *
+ * Contient toute la logique, aucun rendu : chaque page garde son propre
+ * balisage et ses propres classes. `floway-v3` et `/ev` n'ont pas la même
+ * structure de formulaire, mais elles partagent ce comportement.
+ */
+export function useOriginAuto(value: string, onChange: (v: string) => void) {
+  const store = useFlowayStore();
+  const { originMode, geoOrigin, geoOriginIsFresh, geoStatus, locate } = store;
+  const auto = originMode === 'auto';
+
+  // Relance une localisation si la dernière position connue est périmée.
+  useEffect(() => {
+    if (auto && !geoOriginIsFresh && geoStatus === 'idle') locate();
+  }, [auto, geoOriginIsFresh, geoStatus, locate]);
+
+  // Le libellé GPS devient la valeur du champ : c'est lui qui partira dans la
+  // requête, sans que personne n'ait à réécrire l'URL après coup.
+  useEffect(() => {
+    if (auto && geoOrigin && geoOrigin.label !== value) onChange(geoOrigin.label);
+  }, [auto, geoOrigin, value, onChange]);
+
+  return {
+    ...store,
+    auto,
+    failed: geoStatus === 'denied' || geoStatus === 'unavailable',
+    /** Bascule automatique <-> manuel. */
+    toggle: () => {
+      if (auto) {
+        store.setOriginMode('manual');
+      } else {
+        store.setOriginMode('auto');
+        locate();
+      }
+    },
+  };
+}
+
 export function useFlowayStore(): FlowayStore {
   const store = useContext(FlowayStoreContext);
   if (!store) throw new Error('useFlowayStore doit être utilisé dans <FlowayStoreProvider>');
