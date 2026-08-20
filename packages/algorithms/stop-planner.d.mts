@@ -62,5 +62,7 @@ export function buildJourney(input: {
   distanceKm?: number;
   durationMin?: number;
   currentKm?: number;
+  /** Station retenue pour faire le plein avant de partir. */
+  departureStation?: { id: string; detourKm?: number; [key: string]: unknown } | null;
   maxStops?: number;
 }): { steps: JourneyStep[]; notes: string[] };

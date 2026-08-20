@@ -4,6 +4,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 're
 import OriginField from './origin-field';
 import { placeLabel } from './lib/place-label';
 import { stationTitle, stationSubtitle } from './lib/station-label';
+import { useDepartureFuelStation } from './lib/departure-fuel';
 import { formatTimeInZone, instantFromLocalInput } from './lib/energy/trip-clock';
 import TripContextPanel from './trip-context-panel';
 import RouteMap from './route-map';
@@ -172,27 +173,51 @@ export default function FlowayV3(){
  const emergencyStations=useMemo(()=>eligible.filter(s=>s.distanceKm-currentKm<=criticalRange),[eligible,currentKm,criticalRange]);
  // Classement motive : besoin reel de carburant, heure de passage, horaires
  // d'ouverture, prix et nombre de personnes a bord.
+ // Plein avant de partir.
+ //
+ // Le besoin se lit sur le plan d'energie, pas sur le classement : c'est le
+ // classement qui doit s'y adapter, sinon la dependance tourne en rond.
+ const pleinNecessaire=energyPlan!==null&&energyPlan.firstStopAtKm!==null&&currentKm<1;
+ const departureStation=useDepartureFuelStation(route?.origin,fuel,pleinNecessaire);
+
+ // Situation energetique une fois le plein fait au depart.
+ const energyPlanApresPlein=useMemo(()=>{
+  if(!storeVehicle||!route)return null;
+  const electric=storeVehicle.energyKind==='electrique';
+  const capacity=electric?storeVehicle.battery?.value:storeVehicle.tank?.value;
+  const consumption=electric?storeVehicle.electricConsumption?.value:storeVehicle.fuelConsumption?.value;
+  const plan=planEnergy({capacity,consumption,levelPct:100,distanceKm:route.distanceKm,reservePct:storeTrip.reservePct});
+  return plan.missing.length?null:plan;
+ },[storeVehicle,storeTrip,route]);
+
+ // Si l'on fait le plein avant de partir, la suite du trajet se planifie sur
+ // un reservoir plein. Sans cela, le classement n'admettrait comme arrets
+ // carburant que les stations atteignables avec le niveau *actuel* — souvent
+ // aucune — et la route resterait sans ravitaillement apres le plein.
+ const energyPlanEffectif=departureStation?energyPlanApresPlein:energyPlan;
+
  const stopPlan=useMemo(()=>rankStops({
   stations:eligible,
   departureAt:instantFromLocalInput(departure)||new Date(),
   durationMin:route?.durationMin||0,
   distanceKm:route?.distanceKm||0,
   currentKm,
-  energyPlan,
+  energyPlan:energyPlanEffectif,
   context:{passengers:storeTrip.passengers,meal:storeTrip.meal},
- }),[eligible,departure,route,currentKm,energyPlan,storeTrip]);
+ }),[eligible,departure,route,currentKm,energyPlanEffectif,storeTrip]);
 
  const best=useMemo(()=>{if(emergencyFuel){const pool=emergencyStations.length?emergencyStations:eligible.filter(s=>s.distanceKm-currentKm<=(theoreticalRange??0)*.92);return[...pool].sort((a,b)=>((a.distanceKm-currentKm)+a.detourMin*2)-((b.distanceKm-currentKm)+b.detourMin*2))[0]}const cat=intentCategory(intent);const preferred=intent==='Auto'||cat==='Carburant'?eligible:eligible.filter(s=>s.serviceCategories?.includes(cat));const pool=preferred.length?preferred:eligible;const ids=new Set(pool.map(x=>x.id));const rankedId=stopPlan.stops.find(x=>ids.has(String(x.station.id)))?.station.id;const ranked=pool.find(x=>x.id===rankedId);return ranked||[...pool].sort((a,b)=>score(a,intent)-score(b,intent))[0]},[eligible,intent,emergencyFuel,emergencyStations,currentKm,theoreticalRange,stopPlan]);
  const first=eligible[0]; const saved=best&&first?Math.max(0,first.waitMin+first.detourMin-best.waitMin-best.detourMin):0; const pauses=route?Math.max(0,Math.floor((route.durationMin-1)/120)):0;
+
  // Fil du voyage : construit par le moteur de planification, pas ici.
  // L'heuristique precedente placait un ravitaillement meme le plein fait — un
  // arret a 131 km avec 900 km d'autonomie — et un cafe « 55 km apres le
  // meilleur arret », sans egard pour l'heure ni pour l'espacement.
  const journey=useMemo(()=>{
   if(emergencyFuel&&best)return{steps:[{station:best,kind:'carburant',label:'Carburant urgent',reasons:[] as string[]}],notes:[] as string[]};
-  const {steps,notes}=buildJourney({plan:stopPlan,distanceKm:route?.distanceKm||0,durationMin:route?.durationMin||0,currentKm});
+  const {steps,notes}=buildJourney({plan:stopPlan,distanceKm:route?.distanceKm||0,durationMin:route?.durationMin||0,currentKm,departureStation});
   return{steps:steps.map((x:JourneyStep)=>({station:x.station as unknown as Station,kind:x.kind as string,label:x.label,reasons:x.reasons})),notes};
- },[stopPlan,route,currentKm,emergencyFuel,best]);
+ },[stopPlan,route,currentKm,emergencyFuel,best,departureStation]);
  const events:JourneyEvent[]=journey.steps;
  const nearbyIncidents=useMemo(()=>{if(!live)return[];return safetyIncidents.map(i=>({...i,distanceKm:i.lat!=null&&i.lon!=null?haversine([live.lon,live.lat],[i.lon,i.lat]):null})).filter(i=>i.distanceKm!=null&&i.distanceKm<=35).sort((a,b)=>(a.distanceKm||999)-(b.distanceKm||999)).slice(0,5)},[safetyIncidents,live]);
  const [contextOpen,setContextOpen]=useState(false);
@@ -253,7 +278,7 @@ export default function FlowayV3(){
     const prev=i>0&&route?Math.min(96,Math.max(4,events[i-1].station.distanceKm/route.distanceKm*100)):-99;
     const showLabel=pct-prev>=11;
     return <button key={e.station.id} className={`journeyMarker${e.station.highway?' highway':''}`} style={{left:`${pct}%`}} onClick={()=>setSelected(e.station)} title={`${e.label} · ${Math.round(e.station.distanceKm)} km${e.station.highway?' · aire d’autoroute':''}`}><span>{stepIcon(e.kind)}</span>{showLabel&&<small>{Math.round(e.station.distanceKm)} km</small>}</button>;})}<i/></div><small>{liveProgress?`${Math.round(liveProgress.km)} km`:'0 km'}</small><small>{route?Math.round(route.distanceKm):0} km</small></div></article>
-   <aside className="v3feed"><div className="v3panelHead"><div><span>FIL DU VOYAGE</span><h2>Ce qui compte vraiment sur votre route</h2></div><b>{events.length?`${events.length} arrêt${events.length>1?"s":""} conseillé${events.length>1?"s":""}`:"Aucun arrêt nécessaire"}</b></div><div className="v3vertical"><i className="v3line"/><div className="v3end"><i/><strong>{liveProgress?'Votre position':placeLabel(origin)}</strong><small>{liveProgress?`${Math.round(liveProgress.km)} km parcourus`:'0 km'}</small></div>{events.map(e=><button key={e.station.id} className={best?.id===e.station.id?'v3feedStop recommended':'v3feedStop'} onClick={()=>setSelected(e.station)}><span>{stepIcon(e.kind)}</span><div><strong>{e.label}</strong><small>{Math.round(e.station.distanceKm)} km · {clock(e.station)} · {stationTitle(e.station)}</small></div>{best?.id===e.station.id&&<em>{emergencyFuel?'PRIORITÉ SÉCURITÉ':'FLOWAY AI ✦'}</em>}</button>)}<div className="v3end bottom"><i/><strong>{placeLabel(destination)}</strong><small>{route?Math.round(route.distanceKm):0} km · arrivée</small></div></div>{journey.notes.length>0&&<div className="v3journeyNotes">{journey.notes.map((n:string)=><p key={n}>{n}</p>)}</div>}<button className="v3ghost" onClick={scrollToStations}>VOIR TOUTES LES STATIONS</button></aside></section>
+   <aside className="v3feed"><div className="v3panelHead"><div><span>FIL DU VOYAGE</span><h2>Ce qui compte vraiment sur votre route</h2></div><b>{events.length?`${events.length} arrêt${events.length>1?"s":""} conseillé${events.length>1?"s":""}`:"Aucun arrêt nécessaire"}</b></div><div className="v3vertical"><i className="v3line"/><div className="v3end"><i/><strong>{liveProgress?'Votre position':placeLabel(origin)}</strong><small>{liveProgress?`${Math.round(liveProgress.km)} km parcourus`:'0 km'}</small></div>{events.map(e=><button key={e.station.id} className={best?.id===e.station.id?'v3feedStop recommended':'v3feedStop'} onClick={()=>setSelected(e.station)}><span>{stepIcon(e.kind)}</span><div><strong>{e.label}</strong><small>{Number.isFinite(e.station.distanceKm)?`${Math.round(e.station.distanceKm)} km · ${clock(e.station)} · ${stationTitle(e.station)}`:`avant le départ${(e.station as {detourKm?:number}).detourKm!=null?` · à ${(e.station as {detourKm?:number}).detourKm} km`:''} · ${stationTitle(e.station)}`}</small></div>{best?.id===e.station.id&&<em>{emergencyFuel?'PRIORITÉ SÉCURITÉ':'FLOWAY AI ✦'}</em>}</button>)}<div className="v3end bottom"><i/><strong>{placeLabel(destination)}</strong><small>{route?Math.round(route.distanceKm):0} km · arrivée</small></div></div>{journey.notes.length>0&&<div className="v3journeyNotes">{journey.notes.map((n:string)=><p key={n}>{n}</p>)}</div>}<button className="v3ghost" onClick={scrollToStations}>VOIR TOUTES LES STATIONS</button></aside></section>
 
   {route?.geometry?.coordinates?.length&&<section className="v3mapSection"><div className="v3panelHead"><div><span>ITINÉRAIRE</span><h2>Votre route</h2></div></div>
    <RouteMap geometry={route.geometry.coordinates} live={live?{lat:live.lat,lon:live.lon}:null}

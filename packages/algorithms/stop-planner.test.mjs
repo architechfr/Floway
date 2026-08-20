@@ -283,3 +283,58 @@ test('trajet court : aucune pause imposée', () => {
   const { steps } = buildJourney({ plan, distanceKm: 80, durationMin: 60 });
   assert.equal(steps.length, 0);
 });
+
+// --- plein avant de partir -------------------------------------------------
+
+const stationDepart = { id: 'depart', detourKm: 2.4, name: 'Station du coin', price: 1.71 };
+
+test('réservoir bas : le plein se fait avant de partir, pas 200 km plus loin', () => {
+  const energie = planEnergy({ capacity: 40, consumption: 8, levelPct: 50, distanceKm: 500 });
+  const plan = trajet([station('sur-la-route', 200)], { energie });
+  const { steps } = buildJourney({
+    plan, distanceKm: 500, durationMin: 300,
+    departureStation: stationDepart,
+  });
+  assert.equal(steps[0].label, 'Plein avant de partir');
+  assert.equal(steps[0].station.id, 'depart');
+  assert.ok(steps[0].reasons.some((r) => /2\.4 km du départ/.test(r)), steps[0].reasons.join(' | '));
+});
+
+test('si le plein au départ couvre le trajet, aucun autre arrêt carburant', () => {
+  // A 20 % il faut ravitailler ; c'est ce qui declenche la recherche au depart.
+  const bas = planEnergy({ capacity: 60, consumption: 5, levelPct: 20, distanceKm: 500 });
+  assert.ok(bas.firstStopAtKm > 0, 'à 20 % il faut bien ravitailler');
+  // Une fois le plein fait, la suite du trajet se planifie reservoir plein :
+  // 60 L a 5 L/100 = 1200 km, les 500 km passent sans autre arret.
+  const apresPlein = planEnergy({ capacity: 60, consumption: 5, levelPct: 100, distanceKm: 500 });
+  assert.equal(apresPlein.firstStopAtKm, null);
+  const plan = trajet([station('sur-la-route', 150)], { energie: apresPlein });
+  const { steps, notes } = buildJourney({
+    plan, distanceKm: 500, durationMin: 300, departureStation: stationDepart,
+  });
+  assert.equal(steps.filter((s) => s.kind === 'carburant').length, 1);
+  assert.equal(steps[0].label, 'Plein avant de partir');
+  assert.ok(notes.some((n) => /couvre tout le trajet/.test(n)), notes.join(' | '));
+});
+
+test('la station de départ n’empêche pas un arrêt proche sur la route', () => {
+  const apresPlein = planEnergy({ capacity: 60, consumption: 5, levelPct: 100, distanceKm: 500 });
+  const plan = trajet([station('tot', 80, { services: ['Carburant', 'Restauration'] })], {
+    depart: '11:00', duree: 300, distance: 500, energie: apresPlein,
+  });
+  const { steps } = buildJourney({
+    plan, distanceKm: 500, durationMin: 300, departureStation: stationDepart,
+  });
+  // Un déjeuner à 80 km reste proposé, alors que 80 < MIN_STOP_SPACING_KM :
+  // la station de départ n'est pas sur l'itinéraire, elle ne compte pas dans
+  // l'espacement.
+  assert.ok(80 < MIN_STOP_SPACING_KM && steps.some((s) => s.kind === 'repas' && s.station.id === 'tot'), steps.map((s) => s.label).join(' | '));
+});
+
+test('sans station trouvée près du départ, on retombe sur l’arrêt en route', () => {
+  const energie = planEnergy({ capacity: 40, consumption: 8, levelPct: 50, distanceKm: 500 });
+  const plan = trajet([station('sur-la-route', 200)], { energie });
+  const { steps } = buildJourney({ plan, distanceKm: 500, durationMin: 300, departureStation: null });
+  assert.equal(steps.filter((s) => s.kind === 'carburant').length, 1);
+  assert.equal(steps[0].label, 'Ravitaillement');
+});

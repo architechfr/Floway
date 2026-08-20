@@ -287,6 +287,8 @@ export const MAX_DRIVING_STRETCH_MIN = 150;
  * @param {number} input.distanceKm distance totale
  * @param {number} input.durationMin durée de conduite
  * @param {number} input.currentKm point kilométrique actuel
+ * @param {object|null} [input.departureStation] station retenue pour faire le
+ *   plein avant de partir, ou null
  * @param {number} [input.maxStops] nombre maximum d'arrêts retenus
  */
 export function buildJourney({
@@ -294,6 +296,7 @@ export function buildJourney({
   distanceKm = 0,
   durationMin = 0,
   currentKm = 0,
+  departureStation = null,
   maxStops = 4,
 }) {
   const steps = [];
@@ -306,8 +309,12 @@ export function buildJourney({
   const pris = new Set();
 
   /** Un arrêt trop proche d'un autre déjà retenu n'apporte rien. */
+  // La station de départ n'est pas sur l'itinéraire : elle n'entre pas dans
+  // le calcul d'espacement, sinon elle interdirait tout arrêt du premier tiers.
   const assezLoin = (candidat, espacement = MIN_STOP_SPACING_KM) =>
-    steps.every((s) => Math.abs(s.station.distanceKm - candidat.station.distanceKm) >= espacement);
+    steps
+      .filter((s) => Number.isFinite(s.station.distanceKm))
+      .every((s) => Math.abs(s.station.distanceKm - candidat.station.distanceKm) >= espacement);
 
   const retenir = (candidat, kind, label, espacement) => {
     if (!candidat || pris.has(candidat.station.id)) return false;
@@ -324,18 +331,47 @@ export function buildJourney({
     return true;
   };
 
-  // 1. Carburant, seulement si le trajet ne peut pas se faire d'une traite.
+  // 1. Faire le plein avant de partir, quand une station proche du départ a
+  // été trouvée : c'est ce que fait un conducteur qui sait son réservoir bas,
+  // plutôt que de rouler jusqu'à la première station de l'itinéraire.
+  //
+  // L'appelant ne fournit cette station que si le plein est nécessaire ; le
+  // `plan` reçu décrit alors la suite du trajet *une fois le plein fait*.
+  {
+    if (departureStation) {
+      steps.push({
+        station: departureStation,
+        kind: 'carburant',
+        label: 'Plein avant de partir',
+        arrivalAt: null,
+        reasons: [
+          departureStation.detourKm != null
+            ? `à ${departureStation.detourKm} km du départ`
+            : 'proche du départ',
+        ],
+        openStatus: 'inconnu',
+      });
+      pris.add(departureStation.id);
+    }
+  }
+
+  // 2. Ravitaillement en route, si la suite du trajet le demande encore.
   if (plan.fuelStopNeeded) {
     // `rankStops` favorise déjà les stations proches de la limite d'autonomie ;
     // le premier candidat carburant du classement est donc le bon.
     const carburant = plan.stops.find((s) => s.necessity === 'carburant');
     if (carburant) retenir(carburant, 'carburant', 'Ravitaillement', 0);
-    else notes.push('Aucune station atteignable avant la réserve sur cet itinéraire.');
+    else if (!departureStation) {
+      notes.push('Aucune station atteignable avant la réserve sur cet itinéraire.');
+    }
+  } else if (departureStation) {
+    // Tout l'intérêt de s'être arrêté avant de partir.
+    notes.push('Le plein au départ couvre tout le trajet : aucun autre arrêt carburant.');
   } else if (plan.fuelLimitKm === null) {
     notes.push('Autonomie suffisante : aucun ravitaillement nécessaire sur ce trajet.');
   }
 
-  // 2. Un arrêt par repas traversé, dans l'ordre du voyage.
+  // 3. Un arrêt par repas traversé, dans l'ordre du voyage.
   for (const repas of plan.meals) {
     const candidat = plan.stops.find((s) => s.meal === repas.label && !pris.has(s.station.id));
     if (candidat) {
@@ -348,7 +384,7 @@ export function buildJourney({
     }
   }
 
-  // 3. Longue route sans autre motif : une pause de confort à mi-parcours.
+  // 4. Longue route sans autre motif : une pause de confort à mi-parcours.
   if (!steps.length && durationMin > MAX_DRIVING_STRETCH_MIN && restant > MIN_STOP_SPACING_KM) {
     const cible = currentKm + restant / 2;
     const proche = [...plan.stops]
@@ -360,6 +396,7 @@ export function buildJourney({
     if (proche) retenir(proche, 'confort', 'Pause');
   }
 
-  steps.sort((a, b) => a.station.distanceKm - b.station.distanceKm);
+  const km = (s) => (Number.isFinite(s.station.distanceKm) ? s.station.distanceKm : -1);
+  steps.sort((a, b) => km(a) - km(b));
   return { steps: steps.slice(0, maxStops), notes };
 }
