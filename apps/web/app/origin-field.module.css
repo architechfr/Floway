@@ -1,0 +1,87 @@
+/*
+ * Champ « Départ » du formulaire d'itinéraire.
+ *
+ * Premier module CSS de l'application (hors /ev) : la phase 2 du plan prévoit
+ * de sortir des 24 feuilles globales empilées, dont 31 % de règles mortes et
+ * 163 !important. Tout nouveau composant part donc en CSS Module.
+ */
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.input[readonly] {
+  opacity: 0.85;
+  cursor: default;
+}
+
+.status {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border: 1px solid rgb(78 203 136 / 45%);
+  border-radius: 14px;
+  background: rgb(30 105 72 / 12%);
+}
+
+.statusText {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.statusTitle {
+  color: #7fe6a7;
+  font-weight: 700;
+  font-size: 0.82rem;
+  letter-spacing: 0.02em;
+}
+
+.statusDetail {
+  color: #9fb2b5;
+  font-size: 0.75rem;
+}
+
+.status.warning {
+  border-color: rgb(255 176 92 / 45%);
+  background: rgb(120 72 20 / 14%);
+}
+
+.status.warning .statusTitle {
+  color: #ffc178;
+}
+
+.toggle {
+  white-space: nowrap;
+  flex-shrink: 0;
+  padding: 9px 14px;
+  border: 1px solid rgb(255 255 255 / 22%);
+  border-radius: 10px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+
+.toggle:hover {
+  border-color: rgb(255 255 255 / 45%);
+}
+
+@media (max-width: 520px) {
+  .status {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .toggle {
+    width: 100%;
+  }
+}
