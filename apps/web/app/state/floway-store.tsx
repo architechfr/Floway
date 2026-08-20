@@ -25,7 +25,17 @@ import {
   type ReactNode,
 } from 'react';
 
+import type { EnergyKind, TripContext, VehicleProfile, VehicleSize } from '../lib/vehicles/types';
+import {
+  estimateBattery,
+  estimateElectricConsumption,
+  estimateFuelConsumption,
+  estimateTank,
+} from '../lib/vehicles/capacity-estimates';
+
 const AUTO_ORIGIN_KEY = 'floway:auto-origin';
+const VEHICLE_KEY = 'floway:vehicle-profile';
+const TRIP_CONTEXT_KEY = 'floway:trip-context';
 const LAST_ORIGIN_KEY = 'floway:last-origin-gps';
 
 /** Au-delà de ce délai, une position mémorisée est considérée comme périmée. */
@@ -42,6 +52,40 @@ export type GeoOrigin = {
   updatedAt: number;
 };
 
+export const DEFAULT_TRIP_CONTEXT: TripContext = {
+  fuelLevelPct: 75,
+  batteryLevelPct: 80,
+  reservePct: 10,
+  passengers: 1,
+  meal: 'auto',
+};
+
+/**
+ * Construit un profil à partir du seul couple gabarit / énergie.
+ *
+ * Toutes les valeurs sortent estimées : c'est le point de départ que
+ * l'utilisateur va corriger, pas une vérité.
+ */
+export function buildEstimatedProfile(
+  size: VehicleSize,
+  energyKind: EnergyKind,
+  name = '',
+): VehicleProfile {
+  const tank = estimateTank(size, energyKind);
+  const battery = estimateBattery(size, energyKind);
+  const fuel = estimateFuelConsumption(size, energyKind);
+  const electric = estimateElectricConsumption(size, energyKind);
+  return {
+    name,
+    energyKind,
+    size,
+    tank: tank ? { value: tank.suggested, provenance: 'estimee' } : null,
+    battery: battery ? { value: battery.suggested, provenance: 'estimee' } : null,
+    fuelConsumption: fuel ? { value: fuel, provenance: 'estimee' } : null,
+    electricConsumption: electric ? { value: electric, provenance: 'estimee' } : null,
+  };
+}
+
 type FlowayStore = {
   /** 'auto' : le départ suit la position GPS. 'manual' : l'utilisateur saisit. */
   originMode: OriginMode;
@@ -55,6 +99,16 @@ type FlowayStore = {
   geoMessage: string;
   /** Déclenche une localisation. Sans effet si une requête est déjà en vol. */
   locate: () => void;
+
+  /** Véhicule retenu, ou null tant que l'utilisateur n'a rien renseigné. */
+  vehicle: VehicleProfile | null;
+  setVehicle: (profile: VehicleProfile | null) => void;
+  /** Contexte du trajet en cours : niveaux, réserve, passagers, repas. */
+  trip: TripContext;
+  setTrip: (patch: Partial<TripContext>) => void;
+  /** Vrai une fois que l'utilisateur a validé son véhicule au moins une fois. */
+  vehicleConfirmed: boolean;
+  setVehicleConfirmed: (confirmed: boolean) => void;
 };
 
 const FlowayStoreContext = createContext<FlowayStore | null>(null);
@@ -87,6 +141,25 @@ function readStoredOrigin(): GeoOrigin | null {
 }
 
 /** Écriture tolérante : en navigation privée, `setItem` peut lever. */
+/** Relit un objet JSON du stockage local sans jamais lever. */
+function readJson<T>(key: string): T | null {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const value = JSON.parse(raw);
+    return value && typeof value === 'object' ? (value as T) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Nombre borné, avec repli sur une valeur par défaut si l'entrée est invalide. */
+function numberOr(value: unknown, fallback: number, min: number, max: number): number {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? Math.min(max, Math.max(min, value))
+    : fallback;
+}
+
 function writeStorage(key: string, value: string) {
   try {
     localStorage.setItem(key, value);
@@ -101,6 +174,9 @@ export function FlowayStoreProvider({ children }: { children: ReactNode }) {
   const [geoStatus, setGeoStatus] = useState<GeoStatus>('idle');
   const [geoMessage, setGeoMessage] = useState('');
   const [now, setNow] = useState(0);
+  const [vehicle, setVehicleState] = useState<VehicleProfile | null>(null);
+  const [trip, setTripState] = useState<TripContext>(DEFAULT_TRIP_CONTEXT);
+  const [vehicleConfirmed, setVehicleConfirmedState] = useState(false);
   const locateInFlight = useRef(false);
 
   // Hydratation depuis le stockage local, après le montage uniquement :
@@ -120,6 +196,42 @@ export function FlowayStoreProvider({ children }: { children: ReactNode }) {
     } catch {
       // Stockage indisponible : on reste sur le mode automatique par défaut.
     }
+
+    // Le profil et le contexte sont relus en vérifiant leur forme : un objet
+    // hérité d'une version précédente ne doit pas propager des NaN dans les
+    // calculs d'autonomie.
+    const storedVehicle = readJson<VehicleProfile>(VEHICLE_KEY);
+    if (storedVehicle && typeof storedVehicle.energyKind === 'string' && storedVehicle.size) {
+      setVehicleState(storedVehicle);
+      setVehicleConfirmedState(true);
+    }
+    const storedTrip = readJson<Partial<TripContext>>(TRIP_CONTEXT_KEY);
+    if (storedTrip) {
+      setTripState({
+        fuelLevelPct: numberOr(storedTrip.fuelLevelPct, DEFAULT_TRIP_CONTEXT.fuelLevelPct, 0, 100),
+        batteryLevelPct: numberOr(storedTrip.batteryLevelPct, DEFAULT_TRIP_CONTEXT.batteryLevelPct, 0, 100),
+        reservePct: numberOr(storedTrip.reservePct, DEFAULT_TRIP_CONTEXT.reservePct, 0, 40),
+        passengers: Math.round(numberOr(storedTrip.passengers, DEFAULT_TRIP_CONTEXT.passengers, 1, 9)),
+        meal: storedTrip.meal === 'oui' || storedTrip.meal === 'non' ? storedTrip.meal : 'auto',
+      });
+    }
+  }, []);
+
+  const setVehicle = useCallback((profile: VehicleProfile | null) => {
+    setVehicleState(profile);
+    if (profile) writeStorage(VEHICLE_KEY, JSON.stringify(profile));
+  }, []);
+
+  const setTrip = useCallback((patch: Partial<TripContext>) => {
+    setTripState((current) => {
+      const next = { ...current, ...patch };
+      writeStorage(TRIP_CONTEXT_KEY, JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const setVehicleConfirmed = useCallback((confirmed: boolean) => {
+    setVehicleConfirmedState(confirmed);
   }, []);
 
   const setOriginMode = useCallback((mode: OriginMode) => {
@@ -193,8 +305,14 @@ export function FlowayStoreProvider({ children }: { children: ReactNode }) {
   const geoOriginIsFresh = Boolean(geoOrigin && now - geoOrigin.updatedAt < POSITION_MAX_AGE_MS);
 
   const value = useMemo<FlowayStore>(
-    () => ({ originMode, setOriginMode, geoOrigin, geoOriginIsFresh, geoStatus, geoMessage, locate }),
-    [originMode, setOriginMode, geoOrigin, geoOriginIsFresh, geoStatus, geoMessage, locate],
+    () => ({
+      originMode, setOriginMode, geoOrigin, geoOriginIsFresh, geoStatus, geoMessage, locate,
+      vehicle, setVehicle, trip, setTrip, vehicleConfirmed, setVehicleConfirmed,
+    }),
+    [
+      originMode, setOriginMode, geoOrigin, geoOriginIsFresh, geoStatus, geoMessage, locate,
+      vehicle, setVehicle, trip, setTrip, vehicleConfirmed, setVehicleConfirmed,
+    ],
   );
 
   return <FlowayStoreContext.Provider value={value}>{children}</FlowayStoreContext.Provider>;

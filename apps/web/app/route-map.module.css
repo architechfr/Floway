@@ -1,0 +1,138 @@
+/* Carte de l'itinéraire. Tuiles IGN, tracé et repères en SVG par-dessus. */
+
+.wrapper {
+  position: relative;
+  width: 100%;
+  border-radius: 18px;
+  overflow: hidden;
+  border: 1px solid rgb(255 255 255 / 10%);
+  background: #0b1512;
+}
+
+.frame {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+}
+
+.frame:active { cursor: grabbing; }
+
+.tile {
+  position: absolute;
+  width: 256px;
+  height: 256px;
+  user-select: none;
+  pointer-events: none;
+}
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* Le halo sombre détache le tracé du fond, plan comme photo aérienne. */
+.halo {
+  fill: none;
+  stroke: rgb(6 20 15 / 65%);
+  stroke-width: 8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.line {
+  fill: none;
+  stroke: #4ecb88;
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.start { fill: #4ecb88; stroke: #06140f; stroke-width: 2.5; }
+.end { fill: #ff6b22; stroke: #06140f; stroke-width: 2.5; }
+
+.stop circle {
+  fill: #f2f7f4;
+  stroke: #06140f;
+  stroke-width: 2.5;
+}
+
+.stop[data-kind='carburant'] circle { fill: #ffc178; }
+.stop[data-kind='repas'] circle { fill: #7fe6a7; }
+
+/* Repère bleu pour les aires d'autoroute, cohérent avec la liste. */
+.stop rect { fill: #2f6fd0; stroke: #06140f; stroke-width: 1.5; }
+
+.live { fill: #2f6fd0; stroke: #fff; stroke-width: 2.5; }
+
+.livePulse {
+  fill: rgb(47 111 208 / 22%);
+  animation: pulse 2s ease-out infinite;
+}
+
+@keyframes pulse {
+  0% { opacity: 0.8; transform-box: fill-box; transform-origin: center; transform: scale(0.6); }
+  100% { opacity: 0; transform-box: fill-box; transform-origin: center; transform: scale(1.4); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .livePulse { animation: none; }
+}
+
+.controls,
+.layers {
+  position: absolute;
+  display: flex;
+  gap: 6px;
+  z-index: 2;
+}
+
+.controls {
+  top: 10px;
+  right: 10px;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.layers { bottom: 10px; left: 10px; }
+
+.controls button,
+.layers button {
+  padding: 7px 11px;
+  border: 1px solid rgb(255 255 255 / 22%);
+  border-radius: 9px;
+  background: rgb(8 20 16 / 82%);
+  color: #eef4f1;
+  font: inherit;
+  font-size: 0.74rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  backdrop-filter: blur(4px);
+}
+
+.controls button { min-width: 34px; font-size: 1rem; }
+
+.controls button:hover,
+.layers button:hover { border-color: rgb(255 255 255 / 55%); }
+
+.layerOn {
+  border-color: #ff8a3d !important;
+  color: #ffb987;
+}
+
+.recenter { font-size: 0.66rem !important; letter-spacing: 0.06em; }
+
+.credit {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  z-index: 2;
+  padding: 3px 7px;
+  border-radius: 6px;
+  background: rgb(8 20 16 / 72%);
+  color: #9fb2b5;
+  font-size: 0.6rem;
+}

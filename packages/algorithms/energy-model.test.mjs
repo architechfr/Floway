@@ -35,7 +35,8 @@ test('les données manquantes sont signalées, jamais inventées', () => {
   assert.deepEqual(r.missing, ['capacite']);
   assert.equal(r.fullRangeKm, null);
   assert.equal(r.refuelStops, null);
-  assert.equal(r.estimatedCost, null);
+  assert.equal(r.tripCost, null);
+  assert.equal(r.purchaseCost, null);
 
   const vide = planEnergy({});
   assert.deepEqual(vide.missing, ['capacite', 'consommation', 'niveau', 'distance']);
@@ -80,13 +81,26 @@ test('long trajet : plusieurs arrêts et coût estimé', () => {
   assert.equal(r.refuelStops, 3);
   assert.equal(r.requiredQuantity, 140);
   assert.ok(r.totalQuantityToBuy > 0 && r.totalQuantityToBuy <= 150);
-  assert.equal(r.estimatedCost, Math.round(r.totalQuantityToBuy * 1.75 * 100) / 100);
+  assert.equal(r.purchaseCost, Math.round(r.totalQuantityToBuy * 1.75 * 100) / 100);
+  assert.equal(r.tripCost, Math.round(140 * 1.75 * 100) / 100);
 });
 
-test('le coût reste nul tant que le prix unitaire est inconnu', () => {
+test("le coût n'est pas calculé tant que le prix unitaire est inconnu", () => {
   const r = planEnergy({ capacity: 50, consumption: 7, levelPct: 20, distanceKm: 2000 });
-  assert.equal(r.estimatedCost, null);
+  assert.equal(r.tripCost, null);
+  assert.equal(r.purchaseCost, null);
   assert.ok(r.totalQuantityToBuy > 0);
+});
+
+test("un plein suffisant coûte quelque chose même sans achat en route", () => {
+  // 60 L à 6 L/100, plein à 100 % : 900 km exploitables, 300 km à parcourir.
+  const r = planEnergy({ capacity: 60, consumption: 6, levelPct: 100, distanceKm: 300, unitPrice: 1.8 });
+  assert.equal(r.refuelStops, 0);
+  assert.equal(r.totalQuantityToBuy, 0);
+  assert.equal(r.purchaseCost, 0);
+  // Le trajet consomme 18 L : c'est ce que l'utilisateur veut voir affiché.
+  assert.equal(r.requiredQuantity, 18);
+  assert.equal(r.tripCost, 32.4);
 });
 
 test('classification des énergies', () => {
@@ -115,7 +129,7 @@ test('véhicule thermique : plan complet', () => {
   assert.equal(r.fuel.reachesDestination, false);
   assert.equal(r.stops, 1);
   assert.equal(r.fuel.firstStopAtKm, 565.2);
-  assert.ok(r.totalCost > 0);
+  assert.ok(r.totalTripCost > 0);
 });
 
 test('véhicule électrique : aucun plan carburant', () => {

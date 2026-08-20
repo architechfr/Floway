@@ -1,0 +1,248 @@
+/* Panneau de contexte de trajet. CSS Module : pas de 25e feuille globale. */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 16px;
+  background: rgb(3 8 6 / 78%);
+  backdrop-filter: blur(6px);
+  overflow-y: auto;
+}
+
+.panel {
+  width: min(680px, 100%);
+  margin: auto 0 0;
+  padding: 22px;
+  border: 1px solid rgb(255 255 255 / 10%);
+  border-radius: 22px 22px 0 0;
+  background: #0a1512;
+  color: #eef4f1;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+@media (min-width: 720px) {
+  .overlay { align-items: center; }
+  .panel { margin: auto; border-radius: 22px; }
+}
+
+.head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.head small {
+  color: #ff8a3d;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+}
+
+.head h2 {
+  margin: 4px 0 0;
+  font-size: 1.24rem;
+  line-height: 1.25;
+}
+
+.close {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border: 1px solid rgb(255 255 255 / 18%);
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.group {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.group legend {
+  padding: 0 0 10px;
+  color: #9fb2b5;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chip {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 9px 13px;
+  border: 1px solid rgb(255 255 255 / 16%);
+  border-radius: 12px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.82rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chip small {
+  color: #8ba0a3;
+  font-size: 0.66rem;
+}
+
+.chip:hover { border-color: rgb(255 255 255 / 40%); }
+
+.chipOn {
+  border-color: #ff8a3d;
+  background: rgb(255 138 61 / 12%);
+  color: #ffb987;
+}
+
+.chipOn small { color: #d9a983; }
+
+.small { padding: 7px 11px; font-size: 0.76rem; }
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.8rem;
+}
+
+.field > span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #c4d3d1;
+}
+
+.field input[type='number'] {
+  padding: 10px 12px;
+  border: 1px solid rgb(255 255 255 / 16%);
+  border-radius: 10px;
+  background: rgb(255 255 255 / 4%);
+  color: inherit;
+  font: inherit;
+  font-size: 1rem;
+}
+
+.field input[type='range'] { accent-color: #ff8a3d; }
+
+.field small { color: #8ba0a3; font-size: 0.68rem; }
+
+.badge {
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgb(255 193 120 / 16%);
+  color: #ffc178;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  align-items: flex-start;
+}
+
+.inlineField {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  font-size: 0.8rem;
+  color: #c4d3d1;
+}
+
+.inlineField input {
+  width: 88px;
+  padding: 10px 12px;
+  border: 1px solid rgb(255 255 255 / 16%);
+  border-radius: 10px;
+  background: rgb(255 255 255 / 4%);
+  color: inherit;
+  font: inherit;
+  font-size: 1rem;
+}
+
+.note {
+  margin: 10px 0 0;
+  color: #8ba0a3;
+  font-size: 0.72rem;
+  line-height: 1.5;
+}
+
+.result {
+  padding: 16px;
+  border: 1px solid rgb(78 203 136 / 30%);
+  border-radius: 16px;
+  background: rgb(30 105 72 / 10%);
+}
+
+.result > small {
+  color: #7fe6a7;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+}
+
+.resultGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.stat span { color: #9fb2b5; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em; }
+.stat strong { font-size: 1.32rem; color: #eef4f1; }
+.stat small { color: #8ba0a3; font-size: 0.68rem; }
+
+.statStrong strong { color: #ffc178; }
+
+.missing {
+  margin: 10px 0 0;
+  color: #ffc178;
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.validate {
+  padding: 15px;
+  border: 0;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #ff8a3d, #ff6b22);
+  color: #1a0d05;
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+}
