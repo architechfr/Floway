@@ -12,6 +12,9 @@ export {
   arrivalAtKm,
   mealsDuringTrip,
   rankStops,
+  buildJourney,
+  MIN_STOP_SPACING_KM,
+  MAX_DRIVING_STRETCH_MIN,
 } from '../../../../../packages/algorithms/stop-planner.mjs';
 
-export type { PlannedStop, StopPlan } from '../../../../../packages/algorithms/stop-planner.mjs';
+export type { PlannedStop, StopPlan, JourneyStep } from '../../../../../packages/algorithms/stop-planner.mjs';

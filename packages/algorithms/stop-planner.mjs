@@ -247,3 +247,119 @@ export function rankStops({
     stops,
   };
 }
+
+/**
+ * Espacement minimal entre deux arrêts proposés.
+ *
+ * Trois arrêts à 40, 120 et 160 km ne forment pas un voyage : on ferait le
+ * plein, puis l'appoint. En deçà de cette distance, le second arrêt n'apporte
+ * rien que le premier ne couvre déjà.
+ */
+export const MIN_STOP_SPACING_KM = 90;
+
+/**
+ * Durée de conduite au-delà de laquelle une pause s'impose, même sans repas
+ * ni ravitaillement. La sécurité routière recommande une pause toutes les
+ * deux heures ; on laisse une marge avant de la proposer.
+ */
+export const MAX_DRIVING_STRETCH_MIN = 150;
+
+/**
+ * Construit le fil du voyage à partir d'un classement.
+ *
+ * `rankStops` dit quelles stations valent le détour ; cette fonction décide
+ * lesquelles retenir et pourquoi. Elle applique la logique que l'utilisateur
+ * attend, dans cet ordre :
+ *
+ *  1. réservoir insuffisant → un ravitaillement, placé au plus tard possible
+ *     avant la réserve ;
+ *  2. repas traversés par le trajet → un arrêt par repas, à l'heure ;
+ *  3. longue route sans autre motif → une pause de confort.
+ *
+ * Quand le réservoir suffit, aucun arrêt carburant n'est propose : c'est le
+ * cas qui posait probleme, une pause a 131 km avec le plein fait.
+ *
+ * `notes` porte ce qui n'est délibérément pas proposé, pour que l'absence
+ * d'arrêt soit lisible au lieu de passer pour un oubli.
+ *
+ * @param {object} input
+ * @param {StopPlanLike} input.plan résultat de `rankStops`
+ * @param {number} input.distanceKm distance totale
+ * @param {number} input.durationMin durée de conduite
+ * @param {number} input.currentKm point kilométrique actuel
+ * @param {number} [input.maxStops] nombre maximum d'arrêts retenus
+ */
+export function buildJourney({
+  plan,
+  distanceKm = 0,
+  durationMin = 0,
+  currentKm = 0,
+  maxStops = 4,
+}) {
+  const steps = [];
+  const notes = [];
+  if (!plan || !Array.isArray(plan.stops) || !plan.stops.length) {
+    return { steps, notes };
+  }
+
+  const restant = Math.max(0, distanceKm - currentKm);
+  const pris = new Set();
+
+  /** Un arrêt trop proche d'un autre déjà retenu n'apporte rien. */
+  const assezLoin = (candidat, espacement = MIN_STOP_SPACING_KM) =>
+    steps.every((s) => Math.abs(s.station.distanceKm - candidat.station.distanceKm) >= espacement);
+
+  const retenir = (candidat, kind, label, espacement) => {
+    if (!candidat || pris.has(candidat.station.id)) return false;
+    if (!assezLoin(candidat, espacement)) return false;
+    pris.add(candidat.station.id);
+    steps.push({
+      station: candidat.station,
+      kind,
+      label,
+      arrivalAt: candidat.arrivalAt,
+      reasons: candidat.reasons,
+      openStatus: candidat.openStatus,
+    });
+    return true;
+  };
+
+  // 1. Carburant, seulement si le trajet ne peut pas se faire d'une traite.
+  if (plan.fuelStopNeeded) {
+    // `rankStops` favorise déjà les stations proches de la limite d'autonomie ;
+    // le premier candidat carburant du classement est donc le bon.
+    const carburant = plan.stops.find((s) => s.necessity === 'carburant');
+    if (carburant) retenir(carburant, 'carburant', 'Ravitaillement', 0);
+    else notes.push('Aucune station atteignable avant la réserve sur cet itinéraire.');
+  } else if (plan.fuelLimitKm === null) {
+    notes.push('Autonomie suffisante : aucun ravitaillement nécessaire sur ce trajet.');
+  }
+
+  // 2. Un arrêt par repas traversé, dans l'ordre du voyage.
+  for (const repas of plan.meals) {
+    const candidat = plan.stops.find((s) => s.meal === repas.label && !pris.has(s.station.id));
+    if (candidat) {
+      const majuscule = repas.label.charAt(0).toUpperCase() + repas.label.slice(1);
+      if (!retenir(candidat, 'repas', majuscule)) {
+        notes.push(`${majuscule} : l'arrêt le mieux placé est déjà retenu juste avant.`);
+      }
+    } else {
+      notes.push(`Aucune station avec restauration à l'heure du ${repas.label} sur cet itinéraire.`);
+    }
+  }
+
+  // 3. Longue route sans autre motif : une pause de confort à mi-parcours.
+  if (!steps.length && durationMin > MAX_DRIVING_STRETCH_MIN && restant > MIN_STOP_SPACING_KM) {
+    const cible = currentKm + restant / 2;
+    const proche = [...plan.stops]
+      .filter((s) => !pris.has(s.station.id))
+      .sort(
+        (a, b) =>
+          Math.abs(a.station.distanceKm - cible) - Math.abs(b.station.distanceKm - cible),
+      )[0];
+    if (proche) retenir(proche, 'confort', 'Pause');
+  }
+
+  steps.sort((a, b) => a.station.distanceKm - b.station.distanceKm);
+  return { steps: steps.slice(0, maxStops), notes };
+}

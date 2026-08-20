@@ -44,3 +44,23 @@ export function rankStops(input: {
   energyPlan?: unknown;
   context?: { passengers?: number; meal?: string };
 }): StopPlan;
+
+export const MIN_STOP_SPACING_KM: number;
+export const MAX_DRIVING_STRETCH_MIN: number;
+
+export type JourneyStep = {
+  station: { id: string; distanceKm: number; [key: string]: unknown };
+  kind: 'carburant' | 'repas' | 'confort';
+  label: string;
+  arrivalAt: Date | null;
+  reasons: string[];
+  openStatus: 'ouvert' | 'ferme' | 'inconnu';
+};
+
+export function buildJourney(input: {
+  plan: StopPlan | null;
+  distanceKm?: number;
+  durationMin?: number;
+  currentKm?: number;
+  maxStops?: number;
+}): { steps: JourneyStep[]; notes: string[] };

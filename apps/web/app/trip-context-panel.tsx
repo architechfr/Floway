@@ -22,6 +22,7 @@ import {
 import { ENERGY_LABELS, VEHICLE_SIZES } from './lib/vehicles/types';
 import type { EnergyKind, VehicleSize } from './lib/vehicles/types';
 import { buildEstimatedProfile, useFlowayStore } from './state/floway-store';
+import NumberField from './number-field';
 import styles from './trip-context-panel.module.css';
 
 type Props = {
@@ -56,6 +57,13 @@ export default function TripContextPanel({ distanceKm, fuelPricePerL, onClose }:
     field: 'tank' | 'battery' | 'fuelConsumption' | 'electricConsumption',
     raw: string,
   ) => {
+    // Champ vide : on retire la valeur au lieu de la refuser en silence. La
+    // refuser laissait le caractere efface revenir a l'ecran, le champ etant
+    // controle par le modele.
+    if (raw.trim() === '') {
+      setVehicle({ ...profile, [field]: null });
+      return;
+    }
     const value = Number(raw.replace(',', '.'));
     if (!Number.isFinite(value) || value <= 0) return;
     setVehicle({ ...profile, [field]: { value, provenance: 'saisie' } });
@@ -217,12 +225,12 @@ export default function TripContextPanel({ distanceKm, fuelPricePerL, onClose }:
           <div className={styles.inline}>
             <label className={styles.inlineField}>
               Personnes
-              <input
-                type="number"
+              <NumberField
                 min={1}
                 max={9}
+                step={1}
                 value={trip.passengers}
-                onChange={(e) => setTrip({ passengers: Math.max(1, Math.min(9, Number(e.target.value) || 1)) })}
+                onCommit={(v) => { if (v !== null) setTrip({ passengers: Math.round(v) }); }}
               />
             </label>
             <div className={styles.inlineField}>
@@ -319,12 +327,12 @@ function Field({
         {label}
         {estimated && <b className={styles.badge}>estimé</b>}
       </span>
-      <input
-        type="number"
-        step="0.1"
-        min="1"
-        value={measured?.value ?? ''}
-        onChange={(e) => onChange(e.target.value)}
+      <NumberField
+        step={0.1}
+        min={1}
+        allowEmpty
+        value={measured?.value ?? null}
+        onCommit={(v) => onChange(v === null ? '' : String(v))}
       />
       <small>
         {unit}

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { arrivalAtKm, mealsDuringTrip, rankStops } from './stop-planner.mjs';
+import { arrivalAtKm, buildJourney, mealsDuringTrip, rankStops, MIN_STOP_SPACING_KM } from './stop-planner.mjs';
 import { planEnergy } from './energy-model.mjs';
 import { formatTimeInZone, instantFromLocalInput } from './trip-clock.mjs';
 
@@ -199,4 +199,87 @@ test('plus de deux passagers : les services de confort comptent', () => {
 test('aucune station devant : le planificateur ne casse pas', () => {
   const r = rankStops({ stations: [], departureAt: dep('09:00'), durationMin: 100, distanceKm: 200 });
   assert.deepEqual(r.stops, []);
+});
+
+// --- fil du voyage ---------------------------------------------------------
+
+const trajet = (stations, { depart = '09:00', duree = 300, distance = 500, energie = null, contexte = {} } = {}) =>
+  rankStops({
+    stations,
+    departureAt: dep(depart),
+    durationMin: duree,
+    distanceKm: distance,
+    energyPlan: energie,
+    context: contexte,
+  });
+
+test('le plein fait : aucun arrêt carburant proposé, et l’absence est expliquée', () => {
+  // 60 L à 5 L/100 = 1200 km d'autonomie pour 500 km de trajet.
+  const energie = planEnergy({ capacity: 60, consumption: 5, levelPct: 100, distanceKm: 500 });
+  assert.equal(energie.firstStopAtKm, null, 'le plein couvre le trajet');
+  const plan = trajet([station('a', 131), station('b', 300)], { energie });
+  const { steps, notes } = buildJourney({ plan, distanceKm: 500, durationMin: 300 });
+  assert.equal(steps.filter((s) => s.kind === 'carburant').length, 0);
+  assert.ok(notes.some((n) => /Autonomie suffisante/.test(n)), notes.join(' | '));
+});
+
+test('réservoir insuffisant : un seul ravitaillement, au plus tard avant la réserve', () => {
+  // 40 L à 8 L/100 à 50 % = 250 km, réserve 10 % → environ 210 km exploitables.
+  const energie = planEnergy({ capacity: 40, consumption: 8, levelPct: 50, distanceKm: 500 });
+  assert.ok(energie.firstStopAtKm > 0, 'un ravitaillement est bien nécessaire');
+  const plan = trajet([station('proche', 60), station('juste', 200), station('trop-loin', 480)], { energie });
+  const { steps } = buildJourney({ plan, distanceKm: 500, durationMin: 300 });
+  const carburant = steps.filter((s) => s.kind === 'carburant');
+  assert.equal(carburant.length, 1);
+  assert.equal(carburant[0].station.id, 'juste', 'le plus proche de la limite, pas le premier venu');
+});
+
+test('un départ à 11 h fait proposer un déjeuner, servi par une station qui restaure', () => {
+  const stations = [
+    station('sans-resto', 120),
+    station('resto', 150, { services: ['Carburant', 'Restauration'] }),
+  ];
+  const plan = trajet(stations, { depart: '11:00', duree: 300, distance: 500 });
+  const { steps } = buildJourney({ plan, distanceKm: 500, durationMin: 300 });
+  const repas = steps.filter((s) => s.kind === 'repas');
+  assert.equal(repas.length, 1);
+  assert.equal(repas[0].station.id, 'resto');
+  assert.equal(repas[0].label, 'Déjeuner');
+});
+
+test('aucun repas traversé : rien n’est inventé', () => {
+  // Départ 15 h, 2 h de route : ni déjeuner ni dîner.
+  const plan = trajet([station('a', 60, { services: ['Carburant', 'Restauration'] })], {
+    depart: '15:00', duree: 120, distance: 200,
+  });
+  const { steps } = buildJourney({ plan, distanceKm: 200, durationMin: 120 });
+  assert.equal(steps.filter((s) => s.kind === 'repas').length, 0);
+});
+
+test('les arrêts retenus ne se suivent pas de trop près', () => {
+  const energie = planEnergy({ capacity: 40, consumption: 8, levelPct: 50, distanceKm: 500 });
+  const stations = [
+    station('a', 190, { services: ['Carburant', 'Restauration'] }),
+    station('b', 200, { services: ['Carburant', 'Restauration'] }),
+  ];
+  const plan = trajet(stations, { depart: '11:00', duree: 300, distance: 500, energie });
+  const { steps } = buildJourney({ plan, distanceKm: 500, durationMin: 300 });
+  const ecarts = steps.slice(1).map((s, i) => s.station.distanceKm - steps[i].station.distanceKm);
+  assert.ok(ecarts.every((e) => e >= MIN_STOP_SPACING_KM), `écarts : ${ecarts.join(', ')}`);
+});
+
+test('longue route sans repas ni carburant : une pause de confort à mi-parcours', () => {
+  const plan = trajet([station('debut', 40), station('milieu', 240), station('fin', 460)], {
+    depart: '15:00', duree: 300, distance: 500,
+  });
+  const { steps } = buildJourney({ plan, distanceKm: 500, durationMin: 300 });
+  assert.equal(steps.length, 1);
+  assert.equal(steps[0].kind, 'confort');
+  assert.equal(steps[0].station.id, 'milieu');
+});
+
+test('trajet court : aucune pause imposée', () => {
+  const plan = trajet([station('a', 30)], { depart: '15:00', duree: 60, distance: 80 });
+  const { steps } = buildJourney({ plan, distanceKm: 80, durationMin: 60 });
+  assert.equal(steps.length, 0);
 });
