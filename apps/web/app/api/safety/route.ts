@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+import { timeoutFetch } from '../_lib/http';
+
+// Masque le `fetch` global pour ce module : tout appel sortant est abandonné
+// automatiquement au-delà du délai, sans modifier les points d'appel.
+const fetch = timeoutFetch();
+
 type Incident={type?:string;geometry?:{type?:string;coordinates?:unknown};properties?:{iconCategory?:number;magnitudeOfDelay?:number;events?:Array<{description?:string;code?:number}>;startTime?:string;endTime?:string;from?:string;to?:string;length?:number;delay?:number;roadNumbers?:string[]}};
 const labels:Record<number,string>={1:'Accident',2:'Brouillard',3:'Conditions dangereuses',4:'Pluie',5:'Verglas',6:'Bouchon',7:'Voie fermée',8:'Route fermée',9:'Travaux',10:'Vent',11:'Inondation',14:'Véhicule en panne'};
 const icons:Record<number,string>={1:'⚠️',2:'🌫️',3:'⚠️',4:'🌧️',5:'🧊',6:'🚗',7:'🚧',8:'⛔',9:'🚧',10:'💨',11:'🌊',14:'🛠️'};

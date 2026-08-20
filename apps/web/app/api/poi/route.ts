@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+import { timeoutFetch, SLOW_TIMEOUT_MS, clientIp, rateLimit, tooManyRequests } from '../_lib/http';
+
+// Masque le `fetch` global pour ce module : tout appel sortant est abandonné
+// automatiquement au-delà du délai, sans modifier les points d'appel.
+const fetch = timeoutFetch(SLOW_TIMEOUT_MS);
+
 type Poi = {
   id: string;
   name: string;
@@ -133,7 +139,16 @@ async function askMistral(arrivalAt: Date, pois: Poi[]): Promise<AiInsight | nul
   }
 }
 
+/** Fenetre et plafond de la limitation de debit par IP. */
+const RATE_WINDOW_MS = 5 * 60 * 1000;
+const RATE_LIMIT = 30;
+
 export async function GET(request: NextRequest) {
+  // Chaque appel declenche une requete Overpass et, si des POI sont trouves,
+  // un appel Mistral facture : la route est limitee en debit par IP.
+  const quota = rateLimit(`poi:${clientIp(request)}`, RATE_LIMIT, RATE_WINDOW_MS);
+  if (!quota.ok) return tooManyRequests(quota.retryAfterSeconds);
+
   const lat = Number(request.nextUrl.searchParams.get('lat'));
   const lon = Number(request.nextUrl.searchParams.get('lon'));
   const arrivalRaw = request.nextUrl.searchParams.get('arrivalAt');

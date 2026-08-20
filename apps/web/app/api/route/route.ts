@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+import { timeoutFetch } from '../_lib/http';
+
+// Masque le `fetch` global pour ce module : tout appel sortant est abandonné
+// automatiquement au-delà du délai, sans modifier les points d'appel.
+const fetch = timeoutFetch();
+
 type Point = [number, number];
 type GeocodeFeature = { geometry?: { coordinates?: Point }; properties?: { label?: string } };
 type FuelRecord = Record<string, unknown>;
