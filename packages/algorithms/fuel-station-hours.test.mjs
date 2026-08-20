@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { stationOpeningHours } from './fuel-station-hours.mjs';
 import { openingStatus } from './opening-hours.mjs';
+import { instantFromLocalInput } from './trip-clock.mjs';
 
 const jour = (id, nom, horaire, ferme = '') => ({ '@id': String(id), '@nom': nom, '@ferme': ferme, ...(horaire ? { horaire } : {}) });
 const plage = (o, f) => ({ '@ouverture': o, '@fermeture': f });
@@ -26,9 +27,9 @@ test('cas réel : semaine 07.00-19.00, samedi écourté, dimanche sans horaire',
   assert.equal(spec, 'Mo 07:00-19:00; Tu 07:00-19:00; Sa 07:30-12:00');
 
   // Et la chaîne complète répond juste.
-  assert.equal(openingStatus(spec, new Date('2026-08-17T08:00:00')), 'ouvert'); // lundi
-  assert.equal(openingStatus(spec, new Date('2026-08-22T13:00:00')), 'ferme'); // samedi apres-midi
-  assert.equal(openingStatus(spec, new Date('2026-08-23T10:00:00')), 'ferme'); // dimanche non liste
+  assert.equal(openingStatus(spec, instantFromLocalInput('2026-08-17T08:00')), 'ouvert'); // lundi
+  assert.equal(openingStatus(spec, instantFromLocalInput('2026-08-22T13:00')), 'ferme'); // samedi apres-midi
+  assert.equal(openingStatus(spec, instantFromLocalInput('2026-08-23T10:00')), 'ferme'); // dimanche non liste
 });
 
 test('coupure méridienne : horaire est un tableau', () => {
@@ -37,8 +38,8 @@ test('coupure méridienne : horaire est un tableau', () => {
   });
   const spec = stationOpeningHours(payload, 'Non');
   assert.equal(spec, 'Mo 08:00-12:00,14:00-19:00');
-  assert.equal(openingStatus(spec, new Date('2026-08-17T13:00:00')), 'ferme');
-  assert.equal(openingStatus(spec, new Date('2026-08-17T15:00:00')), 'ouvert');
+  assert.equal(openingStatus(spec, instantFromLocalInput('2026-08-17T13:00')), 'ferme');
+  assert.equal(openingStatus(spec, instantFromLocalInput('2026-08-17T15:00')), 'ouvert');
 });
 
 test('jour explicitement fermé', () => {
@@ -47,7 +48,7 @@ test('jour explicitement fermé', () => {
   });
   const spec = stationOpeningHours(payload, 'Non');
   assert.equal(spec, 'Mo 08:00-19:00; Su off');
-  assert.equal(openingStatus(spec, new Date('2026-08-23T10:00:00')), 'ferme');
+  assert.equal(openingStatus(spec, instantFromLocalInput('2026-08-23T10:00')), 'ferme');
 });
 
 test('plage nulle 01.00-01.00 : ignorée plutôt qu’interprétée', () => {
@@ -61,7 +62,7 @@ test('champ absent ou illisible : null, jamais une supposition', () => {
   assert.equal(stationOpeningHours('pas du json', 'Non'), null);
   assert.equal(stationOpeningHours('{"jour":[{"@id":"1","@nom":"Lundi","@ferme":""}]}', 'Non'), null);
   // Et l'inconnu se propage jusqu'au statut.
-  assert.equal(openingStatus(stationOpeningHours(null, 'Non'), new Date('2026-08-17T10:00:00')), 'inconnu');
+  assert.equal(openingStatus(stationOpeningHours(null, 'Non'), instantFromLocalInput('2026-08-17T10:00')), 'inconnu');
 });
 
 test('objet déjà désérialisé accepté tel quel', () => {

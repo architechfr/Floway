@@ -14,6 +14,12 @@
  */
 
 import { UNKNOWN, openingStatus } from './opening-hours.mjs';
+import {
+  TRIP_TIME_ZONE,
+  instantFromLocalInput,
+  minutesOfDayInZone,
+  zonedDateKey,
+} from './trip-clock.mjs';
 
 /** Créneaux de repas, en minutes depuis minuit, usages français. */
 export const MEAL_WINDOWS = [
@@ -64,24 +70,29 @@ export function arrivalAtKm(departureAt, durationMin, distanceKm, km) {
  *
  * @returns {{id:string,label:string,at:Date}[]} un élément par repas traversé
  */
-export function mealsDuringTrip(departureAt, durationMin) {
+export function mealsDuringTrip(departureAt, durationMin, timeZone = TRIP_TIME_ZONE) {
   if (!(departureAt instanceof Date) || Number.isNaN(departureAt.getTime())) return [];
   if (!(durationMin > 0)) return [];
 
   const arrival = new Date(departureAt.getTime() + durationMin * 60000);
   const meals = [];
 
-  // On balaie chaque journée couverte par le trajet : un départ tardif peut
-  // faire franchir le déjeuner du lendemain.
-  const cursor = new Date(departureAt);
-  cursor.setHours(0, 0, 0, 0);
-
-  for (let day = 0; day < 4 && cursor <= arrival; day += 1) {
+  // On balaie chaque journée couverte par le trajet, dans le fuseau du trajet :
+  // un départ tardif peut faire franchir le déjeuner du lendemain, et les
+  // bornes de journée ne sont pas celles de la machine.
+  for (let day = 0; day < 4; day += 1) {
+    const dateKey = zonedDateKey(departureAt, day, timeZone);
+    if (!dateKey) break;
     for (const window of MEAL_WINDOWS) {
-      const start = new Date(cursor);
-      start.setMinutes(window.from);
-      const end = new Date(cursor);
-      end.setMinutes(window.to);
+      const start = instantFromLocalInput(
+        `${dateKey}T${pad(Math.floor(window.from / 60))}:${pad(window.from % 60)}`,
+        timeZone,
+      );
+      const end = instantFromLocalInput(
+        `${dateKey}T${pad(Math.floor(window.to / 60))}:${pad(window.to % 60)}`,
+        timeZone,
+      );
+      if (!start || !end) continue;
       // Le repas compte si le trajet en couvre une part significative.
       const overlapStart = Math.max(start.getTime(), departureAt.getTime());
       const overlapEnd = Math.min(end.getTime(), arrival.getTime());
@@ -90,11 +101,12 @@ export function mealsDuringTrip(departureAt, durationMin) {
         meals.push({ id: window.id, label: window.label, at: new Date(overlapStart) });
       }
     }
-    cursor.setDate(cursor.getDate() + 1);
   }
 
   return meals;
 }
+
+const pad = (n) => String(n).padStart(2, '0');
 
 /**
  * Classe les stations à venir selon le besoin réel.
@@ -117,8 +129,9 @@ export function rankStops({
   currentKm = 0,
   energyPlan = null,
   context = {},
+  timeZone = TRIP_TIME_ZONE,
 }) {
-  const meals = context.meal === 'non' ? [] : mealsDuringTrip(departureAt, durationMin);
+  const meals = context.meal === 'non' ? [] : mealsDuringTrip(departureAt, durationMin, timeZone);
 
   // Point au-delà duquel il n'est plus possible d'avancer sans ravitailler.
   const fuelLimitKm =
@@ -164,7 +177,7 @@ export function rankStops({
     // --- horaires ------------------------------------------------------------
     // Sans donnée d'horaires, le statut reste inconnu et n'influence rien :
     // on ne récompense ni ne pénalise une supposition.
-    const status = at ? openingStatus(station.openingHours, at) : UNKNOWN;
+    const status = at ? openingStatus(station.openingHours, at, timeZone) : UNKNOWN;
     let openBonus = 0;
     if (status === 'ouvert') {
       openBonus = WEIGHTS.openConfirmed;
@@ -180,7 +193,7 @@ export function rankStops({
     let mealBonus = 0;
     let mealAtThisStop = null;
     if (at && status !== 'ferme') {
-      const minutes = at.getHours() * 60 + at.getMinutes();
+      const minutes = minutesOfDayInZone(at, timeZone) ?? -1;
       const window = MEAL_WINDOWS.find((w) => minutes >= w.from && minutes < w.to);
       const wanted = context.meal === 'oui' || (context.meal !== 'non' && meals.length > 0);
       const servesFood = Array.isArray(station.services)

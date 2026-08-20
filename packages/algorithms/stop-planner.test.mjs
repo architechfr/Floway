@@ -2,8 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { arrivalAtKm, mealsDuringTrip, rankStops } from './stop-planner.mjs';
 import { planEnergy } from './energy-model.mjs';
+import { formatTimeInZone, instantFromLocalInput } from './trip-clock.mjs';
 
-const dep = (time) => new Date(`2026-08-17T${time}:00`); // un lundi
+/** Départ à l'heure indiquée dans le fuseau du trajet. 2026-08-17 est un lundi. */
+const dep = (time) => instantFromLocalInput(`2026-08-17T${time}`);
 
 const station = (id, km, extra = {}) => ({
   id,
@@ -17,9 +19,8 @@ const station = (id, km, extra = {}) => ({
 
 test("heure de passage : progression réguliere sur le trajet", () => {
   const at = arrivalAtKm(dep('19:00'), 472, 749, 180);
-  // 180/749 de 7 h 52 ≈ 1 h 53 → 20 h 53
-  assert.equal(at.getHours(), 20);
-  assert.equal(at.getMinutes(), 53);
+  // 180/749 de 7 h 52 ≈ 1 h 53 → 20 h 53, heure de la station.
+  assert.equal(formatTimeInZone(at), '20:53');
 });
 
 test('un départ à 19 h sur 7 h de route traverse le dîner', () => {

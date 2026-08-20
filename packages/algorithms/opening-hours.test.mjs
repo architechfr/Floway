@@ -1,9 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { CLOSED, OPEN, UNKNOWN, openingStatus } from './opening-hours.mjs';
+import { instantFromLocalInput } from './trip-clock.mjs';
 
-/** Aide : construit une date locale sur un jour de semaine donné. */
-const at = (isoDate, time) => new Date(`${isoDate}T${time}:00`);
+/**
+ * Aide : instant désigné par une date et une heure **du fuseau du trajet**.
+ * Volontairement explicite : construire la date avec `new Date()` la rendrait
+ * dépendante du fuseau de la machine de test, ce qui est le bug corrigé.
+ */
+const at = (isoDate, time) => instantFromLocalInput(`${isoDate}T${time}`);
 
 // 2026-08-17 est un lundi, 2026-08-23 un dimanche, 2026-08-22 un samedi.
 const LUNDI = '2026-08-17';

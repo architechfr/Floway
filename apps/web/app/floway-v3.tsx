@@ -3,12 +3,13 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import OriginField from './origin-field';
 import { placeLabel } from './lib/place-label';
+import { formatTimeInZone, instantFromLocalInput } from './lib/energy/trip-clock';
 import TripContextPanel from './trip-context-panel';
 import { useFlowayStore } from './state/floway-store';
 import { rankStops } from './lib/energy/stop-planner';
 import { planEnergy } from './lib/energy/model';
 
-type Station={id:string;name:string;brand?:string;city:string;address?:string;distanceKm:number;routeOffsetKm?:number;price:number;waitMin:number;detourMin:number;lat?:number;lon?:number;arrivalHour?:number;arrivalMinute?:number;services?:string[];serviceCategories?:string[];flowayContextScore?:number;smartContext?:{message:string;intent?:string};sources?:{station?:string;priceFreshness?:string;wait?:string};waitModel?:{label:string;confidence:string;measured?:boolean;factors:string[]};priceQuality?:{updatedAt?:string|null;ageHours?:number|null;status?:string;confidence?:string};highway?:boolean;openingHours?:string|null};
+type Station={id:string;name:string;brand?:string;city:string;address?:string;distanceKm:number;routeOffsetKm?:number;price:number;waitMin:number;detourMin:number;lat?:number;lon?:number;arrivalHour?:number;arrivalMinute?:number;arrivalIso?:string;services?:string[];serviceCategories?:string[];flowayContextScore?:number;smartContext?:{message:string;intent?:string};sources?:{station?:string;priceFreshness?:string;wait?:string};waitModel?:{label:string;confidence:string;measured?:boolean;factors:string[]};priceQuality?:{updatedAt?:string|null;ageHours?:number|null;status?:string;confidence?:string};highway?:boolean;openingHours?:string|null};
 type RouteData={origin:{label:string;lat?:number;lon?:number};destination:{label:string;lat?:number;lon?:number};distanceKm:number;durationMin:number;baseDurationMin?:number;stations:Station[];fuel:string;geometry?:{coordinates:[number,number][]};traffic?:{live:boolean;label:string;delayMin:number|null;source?:string|null}};
 type Filter='Tous'|'Restauration'|'Café'|'Boutique'|'Toilettes';
 type Intent='Auto'|'Manger'|'Café'|'Carburant'|'Recharge'|'Toilettes';
@@ -19,7 +20,10 @@ type SafetyIncident={id:string;label:string;icon:string;description:string;delay
 
 const serviceIcon=(s:string)=>s==='Restauration'?'🍴':s==='Café'?'☕':s==='Boutique'?'🛍':s==='Toilettes'?'🚻':s==='Recharge VE'?'⚡':s==='Douches'?'🚿':s==='Wi-Fi'?'📶':'⛽';
 const duration=(m=0)=>{const h=Math.floor(m/60),r=Math.max(0,Math.round(m%60));return h?`${h} h ${String(r).padStart(2,'0')}`:`${r} min`};
-const clock=(s?:Station)=>s?.arrivalHour==null?'--:--':`${String(s.arrivalHour).padStart(2,'0')}:${String(s.arrivalMinute||0).padStart(2,'0')}`;
+// L'heure affichee vient de l'instant absolu renvoye par l'API, formate dans
+// le fuseau du trajet. Les champs arrivalHour/Minute restent un repli.
+const clock=(s?:Station)=>{if(s?.arrivalIso){const d=new Date(s.arrivalIso);if(!Number.isNaN(d.getTime()))return formatTimeInZone(d);}
+ return s?.arrivalHour==null?'--:--':`${String(s.arrivalHour).padStart(2,'0')}:${String(s.arrivalMinute||0).padStart(2,'0')}`};
 const localDateTime=()=>{const d=new Date();return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16)};
 const toRad=(n:number)=>n*Math.PI/180;
 const defaultVehicle:Vehicle={brand:'Volkswagen',model:'Tiguan',year:'2014',engine:'2.0 TDI',tankL:64,consumption:6.5,fuelPct:75,reserveKm:80};
@@ -42,7 +46,7 @@ export default function FlowayV3(){
 
  const { vehicleConfirmed, vehicle:storeVehicle, trip:storeTrip } = useFlowayStore();
 
- async function loadRoute(from:string,to:string,nextFuel=fuel,when=departure){setLoading(true);setError('');try{const iso=new Date(when).toISOString();const r=await fetch(`/api/route?origin=${encodeURIComponent(from)}&destination=${encodeURIComponent(to)}&fuel=${encodeURIComponent(nextFuel)}&departureAt=${encodeURIComponent(iso)}`,{cache:'no-store'});const j=await r.json();if(!r.ok)throw new Error(j.error||'Calcul impossible');setRoute(j);setOrigin(j.origin.label);setDestination(j.destination.label);setDeparture(when);}catch(e){setError(e instanceof Error?e.message:'Impossible de calculer cet itinéraire.')}finally{setLoading(false)}}
+ async function loadRoute(from:string,to:string,nextFuel=fuel,when=departure){setLoading(true);setError('');try{const iso=(instantFromLocalInput(when)||new Date()).toISOString();const r=await fetch(`/api/route?origin=${encodeURIComponent(from)}&destination=${encodeURIComponent(to)}&fuel=${encodeURIComponent(nextFuel)}&departureAt=${encodeURIComponent(iso)}`,{cache:'no-store'});const j=await r.json();if(!r.ok)throw new Error(j.error||'Calcul impossible');setRoute(j);setOrigin(j.origin.label);setDestination(j.destination.label);setDeparture(when);}catch(e){setError(e instanceof Error?e.message:'Impossible de calculer cet itinéraire.')}finally{setLoading(false)}}
  useEffect(()=>{const now=localDateTime();setDeparture(now);setDraftDeparture(now);try{const savedIntent=localStorage.getItem('floway:intent') as Intent|null;const savedVehicle=localStorage.getItem('floway:vehicle');if(savedIntent)setIntent(savedIntent);if(savedVehicle)setVehicle({...defaultVehicle,...JSON.parse(savedVehicle)});}catch{}setHydrated(true);void loadRoute('Paris','Lyon','Gazole',now);return()=>{if(watchRef.current!==null&&typeof navigator!=='undefined'&&navigator.geolocation)navigator.geolocation.clearWatch(watchRef.current)}},[]);
  useEffect(()=>{if(!hydrated)return;localStorage.setItem('floway:intent',intent);localStorage.setItem('floway:vehicle',JSON.stringify(vehicle));},[intent,vehicle,hydrated]);
  function startGps(){if(typeof navigator==='undefined'||!navigator.geolocation){setGpsState('error');setGpsError('Géolocalisation non disponible sur cet appareil.');return}if(watchRef.current!==null){navigator.geolocation.clearWatch(watchRef.current);watchRef.current=null;setGpsState('off');setLive(null);return}setGpsState('requesting');setGpsError('');watchRef.current=navigator.geolocation.watchPosition(p=>{setLive({lat:p.coords.latitude,lon:p.coords.longitude,accuracy:p.coords.accuracy,speed:p.coords.speed,updatedAt:p.timestamp});setGpsState('on')},e=>{setGpsState('error');setGpsError(e.code===1?'Autorise la localisation dans ton navigateur pour activer le mode trajet.':'Position GPS momentanément indisponible.')},{enableHighAccuracy:true,maximumAge:5000,timeout:12000});}
@@ -79,7 +83,7 @@ export default function FlowayV3(){
  // d'ouverture, prix et nombre de personnes a bord.
  const stopPlan=useMemo(()=>rankStops({
   stations:eligible,
-  departureAt:new Date(departure),
+  departureAt:instantFromLocalInput(departure)||new Date(),
   durationMin:route?.durationMin||0,
   distanceKm:route?.distanceKm||0,
   currentKm,

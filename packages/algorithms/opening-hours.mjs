@@ -11,6 +11,8 @@
  * ne doit jamais devenir un horaire affirmé.
  */
 
+import { TRIP_TIME_ZONE, zonedParts } from './trip-clock.mjs';
+
 const DAYS = ['su', 'mo', 'tu', 'we', 'th', 'fr', 'sa'];
 
 /** Statut d'un lieu à un instant donné. */
@@ -21,9 +23,12 @@ export const UNKNOWN = 'inconnu';
 /**
  * @param {string|null|undefined} spec valeur du tag `opening_hours`
  * @param {Date} at instant à tester
+ * @param {string} [timeZone] fuseau dans lequel lire l'heure. Par défaut celui
+ *   du trajet : l'heure qui compte est celle de l'établissement, pas celle de
+ *   la machine qui exécute le code.
  * @returns {'ouvert'|'ferme'|'inconnu'}
  */
-export function openingStatus(spec, at) {
+export function openingStatus(spec, at, timeZone = TRIP_TIME_ZONE) {
   if (!(at instanceof Date) || Number.isNaN(at.getTime())) return UNKNOWN;
   const raw = typeof spec === 'string' ? spec.trim() : '';
   if (!raw) return UNKNOWN;
@@ -31,8 +36,10 @@ export function openingStatus(spec, at) {
   const normalized = raw.toLowerCase();
   if (normalized === '24/7') return OPEN;
 
-  const dayIndex = at.getDay();
-  const minutes = at.getHours() * 60 + at.getMinutes();
+  const local = zonedParts(at, timeZone);
+  if (!local) return UNKNOWN;
+  const dayIndex = local.weekday;
+  const minutes = local.hours * 60 + local.minutes;
 
   let matchedDay = false;
   let understoodAny = false;
@@ -63,8 +70,8 @@ export function openingStatus(spec, at) {
 }
 
 /** Vrai si le lieu est ouvert, en traitant `'inconnu'` comme non garanti. */
-export function isConfirmedOpen(spec, at) {
-  return openingStatus(spec, at) === OPEN;
+export function isConfirmedOpen(spec, at, timeZone = TRIP_TIME_ZONE) {
+  return openingStatus(spec, at, timeZone) === OPEN;
 }
 
 function parseRule(rule) {
