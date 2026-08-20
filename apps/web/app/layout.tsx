@@ -18,21 +18,15 @@ import './route-price.css';
 import './station-fuel-layer.css';
 import './dynamic-reference.css';
 import './road-navigation.css';
-import './live-copilot.css';
-import './motorway-navigation.css';
 import './quick-fuel.css';
-import './safety-alert.css';
 import './saved-places.css';
 import InteractionLayer from './interaction-layer';
 import PwaInstall from './pwa-install';
 import StationEnrichmentLayer from './station-enrichment-layer';
 import RoutePriceLayer from './route-price-layer';
 import StationFuelLayer from './station-fuel-layer';
-import SpeedLimitLayer from './speed-limit-layer';
-import LiveCopilotLayer from './live-copilot-layer';
 import SessionRestoreLayer from './session-restore-layer';
 import QuickFuelLayer from './quick-fuel-layer';
-import SafetyAlertLayer from './safety-alert-layer';
 import SavedPlacesLayer from './saved-places-layer';
 import NumericInputFix from './numeric-input-fix';
 import { FlowayStoreProvider } from './state/floway-store';
@@ -63,9 +57,6 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       <StationEnrichmentLayer />
       <RoutePriceLayer />
       <StationFuelLayer />
-      <SpeedLimitLayer />
-      <LiveCopilotLayer />
-      <SafetyAlertLayer />
       <PwaInstall />
     </FlowayStoreProvider>
   </body></html>;
