@@ -5,6 +5,7 @@ import OriginField from './origin-field';
 import { placeLabel } from './lib/place-label';
 import { formatTimeInZone, instantFromLocalInput } from './lib/energy/trip-clock';
 import TripContextPanel from './trip-context-panel';
+import RouteMap from './route-map';
 import { useFlowayStore } from './state/floway-store';
 import { rankStops } from './lib/energy/stop-planner';
 import { planEnergy } from './lib/energy/model';
@@ -131,6 +132,12 @@ export default function FlowayV3(){
     const showLabel=pct-prev>=11;
     return <button key={e.station.id} className={`journeyMarker${e.station.highway?' highway':''}`} style={{left:`${pct}%`}} onClick={()=>setSelected(e.station)} title={`${e.label} · ${Math.round(e.station.distanceKm)} km${e.station.highway?' · aire d’autoroute':''}`}><span>{serviceIcon(e.kind)}</span>{showLabel&&<small>{Math.round(e.station.distanceKm)} km</small>}</button>;})}<i/></div><small>{liveProgress?`${Math.round(liveProgress.km)} km`:'0 km'}</small><small>{route?Math.round(route.distanceKm):0} km</small></div></article>
    <aside className="v3feed"><div className="v3panelHead"><div><span>FIL DU VOYAGE</span><h2>Ce qui compte vraiment sur votre route</h2></div><b>{events.length} événements utiles</b></div><div className="v3vertical"><i className="v3line"/><div className="v3end"><i/><strong>{liveProgress?'Votre position':placeLabel(origin)}</strong><small>{liveProgress?`${Math.round(liveProgress.km)} km parcourus`:'0 km'}</small></div>{events.map(e=><button key={e.station.id} className={best?.id===e.station.id?'v3feedStop recommended':'v3feedStop'} onClick={()=>setSelected(e.station)}><span>{serviceIcon(e.kind)}</span><div><strong>{e.label}</strong><small>{Math.round(e.station.distanceKm)} km · {clock(e.station)} · {e.station.brand||e.station.city||e.station.name}</small></div>{best?.id===e.station.id&&<em>{emergencyFuel?'PRIORITÉ SÉCURITÉ':'FLOWAY AI ✦'}</em>}</button>)}<div className="v3end bottom"><i/><strong>{placeLabel(destination)}</strong><small>{route?Math.round(route.distanceKm):0} km · arrivée</small></div></div><button className="v3ghost" onClick={()=>document.getElementById('v3stations')?.scrollIntoView({behavior:'smooth'})}>VOIR TOUTES LES STATIONS</button></aside></section>
+
+  {route?.geometry?.coordinates?.length&&<section className="v3mapSection"><div className="v3panelHead"><div><span>ITINÉRAIRE</span><h2>Votre route</h2></div></div>
+   <RouteMap geometry={route.geometry.coordinates} live={live?{lat:live.lat,lon:live.lon}:null}
+    stops={stopPlan.stops.slice(0,12).map(x=>({id:String(x.station.id),lat:(x.station as unknown as Station).lat,lon:(x.station as unknown as Station).lon,
+     label:String((x.station as unknown as Station).name||''),kind:x.necessity,highway:Boolean((x.station as unknown as Station).highway)}))}/>
+  </section>}
 
   <section className="v3intent"><div><span>QUE CHERCHES-TU POUR TON PROCHAIN ARRÊT ?</span><h2>{emergencyFuel?'⛽ Priorité automatique : carburant critique':intent==='Auto'?'Floway choisit selon l’heure et le trajet':intent==='Manger'?'🍴 Premier arrêt mémorisé : manger':intent==='Recharge'?'Priorité aux bornes de recharge':`Priorité mémorisée : ${intent.toLowerCase()}`}</h2></div><div className="intentChips">{(['Auto','Manger','Café','Carburant','Recharge','Toilettes'] as Intent[]).map(x=><button key={x} className={intent===x?'active':''} onClick={()=>setIntent(x)} disabled={emergencyFuel&&x!=='Carburant'}>{x==='Auto'?'✨':x==='Manger'?'🍴':x==='Café'?'☕':x==='Carburant'?'⛽':x==='Recharge'?'⚡':'🚻'} {x==='Auto'?'Floway choisit':x}</button>)}</div></section>
 

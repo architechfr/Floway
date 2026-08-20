@@ -1,0 +1,217 @@
+'use client';
+
+/**
+ * Carte de l'itinéraire.
+ *
+ * Fond de carte : tuiles de la Géoplateforme IGN, sans clé d'API, en
+ * Licence Ouverte. Deux couches disponibles, plan et vue aérienne.
+ *
+ * Aucune bibliothèque cartographique n'est embarquée : le pavage et la
+ * projection tiennent dans `packages/algorithms/slippy-map.mjs`, testé. Le
+ * tracé, les arrêts et la position vive sont dessinés en SVG au-dessus des
+ * tuiles. C'est un choix de sobriété — l'application traîne déjà 134 Ko de
+ * CSS, lui ajouter une dépendance de plusieurs centaines de kilo-octets pour
+ * afficher une ligne et des points ne se justifiait pas.
+ */
+
+import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  fitView,
+  panView,
+  simplifyForDisplay,
+  tilesFor,
+  toScreen,
+  zoomView,
+  type MapView,
+} from './lib/map/slippy-map';
+import styles from './route-map.module.css';
+
+const WMTS = 'https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&STYLE=normal&TILEMATRIXSET=PM';
+
+const LAYERS = {
+  plan: { label: 'Plan', layer: 'GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2', format: 'image/png' },
+  aerien: { label: 'Vue aérienne', layer: 'ORTHOIMAGERY.ORTHOPHOTOS', format: 'image/jpeg' },
+} as const;
+
+type LayerId = keyof typeof LAYERS;
+
+const tileUrl = (layer: LayerId, x: number, y: number, z: number) =>
+  `${WMTS}&LAYER=${LAYERS[layer].layer}&FORMAT=${LAYERS[layer].format}&TILEMATRIX=${z}&TILEROW=${y}&TILECOL=${x}`;
+
+export type MapStop = {
+  id: string;
+  lat?: number;
+  lon?: number;
+  label: string;
+  /** Motif de l'arrêt, qui détermine la couleur du repère. */
+  kind?: 'carburant' | 'repas' | 'confort';
+  highway?: boolean;
+};
+
+type Props = {
+  /** Géométrie de l'itinéraire, couples [lon, lat]. */
+  geometry: [number, number][];
+  stops?: MapStop[];
+  live?: { lat: number; lon: number } | null;
+  height?: number;
+};
+
+export default function RouteMap({ geometry, stops = [], live = null, height = 280 }: Props) {
+  const frame = useRef<HTMLDivElement>(null);
+  const [size, setSize] = useState({ width: 0, height });
+  const [layer, setLayer] = useState<LayerId>('plan');
+  const [view, setView] = useState<MapView | null>(null);
+  const [moved, setMoved] = useState(false);
+  const drag = useRef<{ x: number; y: number } | null>(null);
+
+  // La largeur n'est connue qu'après le montage : on la mesure et on la suit.
+  useEffect(() => {
+    const node = frame.current;
+    if (!node) return;
+    const measure = () => setSize({ width: node.clientWidth, height });
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [height]);
+
+  const path = useMemo(() => simplifyForDisplay(geometry || [], 400), [geometry]);
+
+  // Cadrage initial, et recadrage si l'itinéraire change — mais pas après un
+  // déplacement manuel : reprendre la main à l'utilisateur serait pénible.
+  useEffect(() => {
+    if (!path.length || !size.width) return;
+    setView(fitView(path, size.width, size.height, { padding: 26 }));
+    setMoved(false);
+  }, [path, size.width, size.height]);
+
+  const tiles = useMemo(
+    () => (view ? tilesFor(view, size.width, size.height) : []),
+    [view, size.width, size.height],
+  );
+
+  const line = useMemo(() => {
+    if (!view || !size.width) return '';
+    return path
+      .map(([lon, lat]) => toScreen(lon, lat, view, size.width, size.height))
+      .filter(Boolean)
+      .map((p, i) => `${i ? 'L' : 'M'}${p!.x.toFixed(1)},${p!.y.toFixed(1)}`)
+      .join(' ');
+  }, [path, view, size.width, size.height]);
+
+  const placed = useMemo(() => {
+    if (!view || !size.width) return [];
+    return stops
+      .filter((s) => Number.isFinite(s.lat) && Number.isFinite(s.lon))
+      .map((s) => ({ stop: s, at: toScreen(s.lon!, s.lat!, view, size.width, size.height)! }))
+      .filter((s) => s.at.x > -30 && s.at.x < size.width + 30 && s.at.y > -30 && s.at.y < size.height + 30);
+  }, [stops, view, size.width, size.height]);
+
+  const livePoint = useMemo(
+    () => (view && live && size.width ? toScreen(live.lon, live.lat, view, size.width, size.height) : null),
+    [live, view, size.width, size.height],
+  );
+
+  const start = path.length && view ? toScreen(path[0][0], path[0][1], view, size.width, size.height) : null;
+  const end =
+    path.length && view
+      ? toScreen(path[path.length - 1][0], path[path.length - 1][1], view, size.width, size.height)
+      : null;
+
+  const recadrer = () => {
+    if (!path.length || !size.width) return;
+    setView(fitView(path, size.width, size.height, { padding: 26 }));
+    setMoved(false);
+  };
+
+  return (
+    <div className={styles.wrapper} style={{ height }}>
+      <div
+        ref={frame}
+        className={styles.frame}
+        onPointerDown={(e) => {
+          drag.current = { x: e.clientX, y: e.clientY };
+          e.currentTarget.setPointerCapture(e.pointerId);
+        }}
+        onPointerMove={(e) => {
+          if (!drag.current || !view) return;
+          const dx = e.clientX - drag.current.x;
+          const dy = e.clientY - drag.current.y;
+          if (Math.abs(dx) + Math.abs(dy) < 2) return;
+          drag.current = { x: e.clientX, y: e.clientY };
+          setView((v) => (v ? panView(v, dx, dy) : v));
+          setMoved(true);
+        }}
+        onPointerUp={(e) => {
+          drag.current = null;
+          e.currentTarget.releasePointerCapture(e.pointerId);
+        }}
+        onPointerCancel={() => {
+          drag.current = null;
+        }}
+      >
+        {tiles.map((t) => (
+          <img
+            key={`${t.z}/${t.x}/${t.y}`}
+            className={styles.tile}
+            src={tileUrl(layer, t.x, t.y, t.z)}
+            style={{ left: t.left, top: t.top }}
+            alt=""
+            draggable={false}
+            loading="lazy"
+          />
+        ))}
+
+        {view && size.width > 0 && (
+          <svg className={styles.overlay} width={size.width} height={size.height} aria-hidden="true">
+            <path className={styles.halo} d={line} />
+            <path className={styles.line} d={line} />
+            {start && <circle className={styles.start} cx={start.x} cy={start.y} r={6} />}
+            {end && <circle className={styles.end} cx={end.x} cy={end.y} r={6} />}
+            {placed.map(({ stop, at }) => (
+              <g key={stop.id} className={styles.stop} data-kind={stop.kind || 'confort'}>
+                <circle cx={at.x} cy={at.y} r={7} />
+                {stop.highway && <rect x={at.x - 9} y={at.y - 15} width={18} height={10} rx={2} />}
+              </g>
+            ))}
+            {livePoint && (
+              <>
+                <circle className={styles.livePulse} cx={livePoint.x} cy={livePoint.y} r={13} />
+                <circle className={styles.live} cx={livePoint.x} cy={livePoint.y} r={6} />
+              </>
+            )}
+          </svg>
+        )}
+
+        <div className={styles.controls}>
+          <button type="button" onClick={() => setView((v) => (v ? zoomView(v, 1) : v))} aria-label="Zoomer">
+            +
+          </button>
+          <button type="button" onClick={() => setView((v) => (v ? zoomView(v, -1) : v))} aria-label="Dézoomer">
+            −
+          </button>
+          {moved && (
+            <button type="button" className={styles.recenter} onClick={recadrer}>
+              RECADRER
+            </button>
+          )}
+        </div>
+
+        <div className={styles.layers}>
+          {(Object.keys(LAYERS) as LayerId[]).map((id) => (
+            <button
+              key={id}
+              type="button"
+              className={id === layer ? styles.layerOn : undefined}
+              onClick={() => setLayer(id)}
+            >
+              {LAYERS[id].label}
+            </button>
+          ))}
+        </div>
+
+        <small className={styles.credit}>© IGN — Géoplateforme</small>
+      </div>
+    </div>
+  );
+}

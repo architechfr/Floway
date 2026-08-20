@@ -54,3 +54,12 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Bloc carte : même traitement que les autres sections de la page. */
+.v3app .v3mapSection {
+  margin: 18px 0;
+  padding: 18px;
+  border: 1px solid rgb(255 255 255 / 8%);
+  border-radius: 22px;
+  background: rgb(255 255 255 / 3%);
+}
