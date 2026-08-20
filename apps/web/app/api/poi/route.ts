@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { timeoutFetch, SLOW_TIMEOUT_MS, clientIp, rateLimit, tooManyRequests } from '../_lib/http';
+import { openingStatus } from '../../../../../packages/algorithms/opening-hours.mjs';
 
 // Masque le `fetch` global pour ce module : tout appel sortant est abandonné
 // automatiquement au-delà du délai, sans modifier les points d'appel.
@@ -53,25 +54,23 @@ function minutes(value: string) {
   return h * 60 + m;
 }
 
-function simpleOpeningStatus(openingHours: string | undefined, arrivalAt: Date) {
-  if (!openingHours) return { status: 'unknown' as const, label: 'Horaires à confirmer' };
-  if (openingHours.trim() === '24/7') return { status: '24_7' as const, label: 'Ouvert 24/7' };
-
-  const clock = arrivalAt.getHours() * 60 + arrivalAt.getMinutes();
-  const ranges = [...openingHours.matchAll(/(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})/g)];
-  if (!ranges.length) return { status: 'unknown' as const, label: openingHours };
-
-  const open = ranges.some(match => {
-    const start = minutes(match[1]);
-    const end = minutes(match[2]);
-    if (start == null || end == null) return false;
-    if (end >= start) return clock >= start && clock <= end;
-    return clock >= start || clock <= end;
-  });
-
-  return open
-    ? { status: 'open' as const, label: 'Probablement ouvert à votre passage' }
-    : { status: 'closed' as const, label: 'Probablement fermé à votre passage' };
+/**
+ * Statut d'ouverture d'un POI à l'heure de passage estimée.
+ *
+ * Délègue au parseur de `packages/algorithms/opening-hours.mjs`, qui tient
+ * compte des jours de la semaine. L'implémentation précédente extrayait les
+ * plages `HH:MM-HH:MM` par expression régulière en ignorant les jours : un
+ * « Mo-Fr 08:00-18:00 » consulté un dimanche à 10 h était annoncé
+ * « probablement ouvert ».
+ */
+function simpleOpeningStatus(
+  raw: string | undefined,
+  at: Date,
+): { status: 'open' | 'closed' | 'unknown'; label: string } {
+  const status = openingStatus(raw, at);
+  if (status === 'ouvert') return { status: 'open', label: 'Ouvert à votre passage' };
+  if (status === 'ferme') return { status: 'closed', label: 'Fermé à votre passage' };
+  return { status: 'unknown', label: 'Horaires non renseignés' };
 }
 
 function categoryFrom(tags: Record<string, string>) {

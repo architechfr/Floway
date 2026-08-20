@@ -5,6 +5,8 @@ import OriginField from './origin-field';
 import { placeLabel } from './lib/place-label';
 import TripContextPanel from './trip-context-panel';
 import { useFlowayStore } from './state/floway-store';
+import { rankStops } from './lib/energy/stop-planner';
+import { planEnergy } from './lib/energy/model';
 
 type Station={id:string;name:string;brand?:string;city:string;address?:string;distanceKm:number;routeOffsetKm?:number;price:number;waitMin:number;detourMin:number;lat?:number;lon?:number;arrivalHour?:number;arrivalMinute?:number;services?:string[];serviceCategories?:string[];flowayContextScore?:number;smartContext?:{message:string;intent?:string};sources?:{station?:string;priceFreshness?:string;wait?:string};waitModel?:{label:string;confidence:string;measured?:boolean;factors:string[]};priceQuality?:{updatedAt?:string|null;ageHours?:number|null;status?:string;confidence?:string}};
 type RouteData={origin:{label:string;lat?:number;lon?:number};destination:{label:string;lat?:number;lon?:number};distanceKm:number;durationMin:number;baseDurationMin?:number;stations:Station[];fuel:string;geometry?:{coordinates:[number,number][]};traffic?:{live:boolean;label:string;delayMin:number|null;source?:string|null}};
@@ -38,6 +40,8 @@ export default function FlowayV3(){
  const [live,setLive]=useState<LivePosition|null>(null); const [gpsState,setGpsState]=useState<'off'|'requesting'|'on'|'error'>('off'); const [gpsError,setGpsError]=useState(''); const watchRef=useRef<number|null>(null);
  const [navOpen,setNavOpen]=useState(false); const [safetyConnected,setSafetyConnected]=useState(false); const [safetyIncidents,setSafetyIncidents]=useState<SafetyIncident[]>([]); const [safetyUpdatedAt,setSafetyUpdatedAt]=useState<string|null>(null);
 
+ const { vehicleConfirmed, vehicle:storeVehicle, trip:storeTrip } = useFlowayStore();
+
  async function loadRoute(from:string,to:string,nextFuel=fuel,when=departure){setLoading(true);setError('');try{const iso=new Date(when).toISOString();const r=await fetch(`/api/route?origin=${encodeURIComponent(from)}&destination=${encodeURIComponent(to)}&fuel=${encodeURIComponent(nextFuel)}&departureAt=${encodeURIComponent(iso)}`,{cache:'no-store'});const j=await r.json();if(!r.ok)throw new Error(j.error||'Calcul impossible');setRoute(j);setOrigin(j.origin.label);setDestination(j.destination.label);setDeparture(when);}catch(e){setError(e instanceof Error?e.message:'Impossible de calculer cet itinéraire.')}finally{setLoading(false)}}
  useEffect(()=>{const now=localDateTime();setDeparture(now);setDraftDeparture(now);try{const savedIntent=localStorage.getItem('floway:intent') as Intent|null;const savedVehicle=localStorage.getItem('floway:vehicle');if(savedIntent)setIntent(savedIntent);if(savedVehicle)setVehicle({...defaultVehicle,...JSON.parse(savedVehicle)});}catch{}setHydrated(true);void loadRoute('Paris','Lyon','Gazole',now);return()=>{if(watchRef.current!==null&&typeof navigator!=='undefined'&&navigator.geolocation)navigator.geolocation.clearWatch(watchRef.current)}},[]);
  useEffect(()=>{if(!hydrated)return;localStorage.setItem('floway:intent',intent);localStorage.setItem('floway:vehicle',JSON.stringify(vehicle));},[intent,vehicle,hydrated]);
@@ -59,12 +63,35 @@ export default function FlowayV3(){
  const fuelTargetKm=route?Math.min(route.distanceKm,Math.max(currentKm,currentKm+usableRange)):0;
  const eligible=useMemo(()=>stations.filter(s=>s.distanceKm>=currentKm&&(filter==='Tous'||s.serviceCategories?.includes(filter))),[stations,currentKm,filter]);
  const emergencyStations=useMemo(()=>eligible.filter(s=>s.distanceKm-currentKm<=criticalRange),[eligible,currentKm,criticalRange]);
- const best=useMemo(()=>{if(emergencyFuel){const pool=emergencyStations.length?emergencyStations:eligible.filter(s=>s.distanceKm-currentKm<=theoreticalRange*.92);return[...pool].sort((a,b)=>((a.distanceKm-currentKm)+a.detourMin*2)-((b.distanceKm-currentKm)+b.detourMin*2))[0]}const cat=intentCategory(intent);const preferred=intent==='Auto'||cat==='Carburant'?eligible:eligible.filter(s=>s.serviceCategories?.includes(cat));const pool=preferred.length?preferred:eligible;return[...pool].sort((a,b)=>score(a,intent)-score(b,intent))[0]},[eligible,intent,emergencyFuel,emergencyStations,currentKm,theoreticalRange]);
+ // Plan d'energie issu du vehicule et du niveau saisis par l'utilisateur.
+ // Null tant qu'il n'a rien renseigne : on ne suppose pas un reservoir.
+ const energyPlan=useMemo(()=>{
+  if(!storeVehicle||!route)return null;
+  const electric=storeVehicle.energyKind==='electrique';
+  const capacity=electric?storeVehicle.battery?.value:storeVehicle.tank?.value;
+  const consumption=electric?storeVehicle.electricConsumption?.value:storeVehicle.fuelConsumption?.value;
+  const level=electric?storeTrip.batteryLevelPct:storeTrip.fuelLevelPct;
+  const plan=planEnergy({capacity,consumption,levelPct:level,distanceKm:route.distanceKm,reservePct:storeTrip.reservePct});
+  return plan.missing.length?null:plan;
+ },[storeVehicle,storeTrip,route]);
+
+ // Classement motive : besoin reel de carburant, heure de passage, horaires
+ // d'ouverture, prix et nombre de personnes a bord.
+ const stopPlan=useMemo(()=>rankStops({
+  stations:eligible,
+  departureAt:new Date(departure),
+  durationMin:route?.durationMin||0,
+  distanceKm:route?.distanceKm||0,
+  currentKm,
+  energyPlan,
+  context:{passengers:storeTrip.passengers,meal:storeTrip.meal},
+ }),[eligible,departure,route,currentKm,energyPlan,storeTrip]);
+
+ const best=useMemo(()=>{if(emergencyFuel){const pool=emergencyStations.length?emergencyStations:eligible.filter(s=>s.distanceKm-currentKm<=theoreticalRange*.92);return[...pool].sort((a,b)=>((a.distanceKm-currentKm)+a.detourMin*2)-((b.distanceKm-currentKm)+b.detourMin*2))[0]}const cat=intentCategory(intent);const preferred=intent==='Auto'||cat==='Carburant'?eligible:eligible.filter(s=>s.serviceCategories?.includes(cat));const pool=preferred.length?preferred:eligible;const ids=new Set(pool.map(x=>x.id));const rankedId=stopPlan.stops.find(x=>ids.has(String(x.station.id)))?.station.id;const ranked=pool.find(x=>x.id===rankedId);return ranked||[...pool].sort((a,b)=>score(a,intent)-score(b,intent))[0]},[eligible,intent,emergencyFuel,emergencyStations,currentKm,theoreticalRange,stopPlan]);
  const first=eligible[0]; const saved=best&&first?Math.max(0,first.waitMin+first.detourMin-best.waitMin-best.detourMin):0; const pauses=route?Math.max(0,Math.floor((route.durationMin-1)/120)):0;
  const events=useMemo(()=>{if(!route||!eligible.length)return[] as JourneyEvent[];const out:JourneyEvent[]=[];const add=(station:Station|undefined,kind:string,label?:string)=>{if(station&&!out.some(x=>x.station.id===station.id))out.push({station,kind,label:label||eventLabel(kind)});};if(emergencyFuel){add(best,'Carburant','Carburant urgent');return out}const primaryKind=intent==='Auto'?(best?.serviceCategories?.[0]||'Carburant'):intentCategory(intent);add(best,primaryKind,intent==='Manger'?'Premier arrêt · manger':undefined);const afterBest=(min=45)=>eligible.filter(s=>!best||s.distanceKm>=best.distanceKm+min);add(afterBest(55).find(s=>s.serviceCategories?.includes('Café')),'Café');if(fuelTargetKm<route.distanceKm-20){const fuelStop=eligible.reduce((a,b)=>Math.abs(b.distanceKm-fuelTargetKm)<Math.abs(a.distanceKm-fuelTargetKm)?b:a,eligible[0]);add(fuelStop,'Carburant','Ravitaillement selon autonomie');}add(afterBest(90).find(s=>s.serviceCategories?.includes('Toilettes')),'Toilettes');return out.sort((a,b)=>a.station.distanceKm-b.station.distanceKm).slice(0,5)},[eligible,best,intent,route,fuelTargetKm,emergencyFuel]);
  const nearbyIncidents=useMemo(()=>{if(!live)return[];return safetyIncidents.map(i=>({...i,distanceKm:i.lat!=null&&i.lon!=null?haversine([live.lon,live.lat],[i.lon,i.lat]):null})).filter(i=>i.distanceKm!=null&&i.distanceKm<=35).sort((a,b)=>(a.distanceKm||999)-(b.distanceKm||999)).slice(0,5)},[safetyIncidents,live]);
  const navGeometry=useMemo(()=>{const coords=route?.geometry?.coordinates||[];if(coords.length<2)return null;const sampled=coords.filter((_,i)=>i%Math.max(1,Math.floor(coords.length/90))===0||i===coords.length-1);const xs=sampled.map(c=>c[0]),ys=sampled.map(c=>c[1]),minX=Math.min(...xs),maxX=Math.max(...xs),minY=Math.min(...ys),maxY=Math.max(...ys),dx=Math.max(.0001,maxX-minX),dy=Math.max(.0001,maxY-minY);const pts=sampled.map(c=>`${8+(c[0]-minX)/dx*84},${172-(c[1]-minY)/dy*164}`).join(' ');const progress=Math.max(0,Math.min(1,(liveProgress?.km||0)/Math.max(1,route?.distanceKm||1))),idx=Math.min(sampled.length-1,Math.round(progress*(sampled.length-1))),cp=sampled[idx];return{points:pts,x:8+(cp[0]-minX)/dx*84,y:172-(cp[1]-minY)/dy*164}},[route,liveProgress]);
- const { vehicleConfirmed } = useFlowayStore();
  const [contextOpen,setContextOpen]=useState(false);
 
  // Prix median releve sur le trajet : donnee reelle du flux data.gouv.fr,
