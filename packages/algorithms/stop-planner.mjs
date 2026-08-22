@@ -339,6 +339,7 @@ export function buildJourney({
   durationMin = 0,
   currentKm = 0,
   departureStation = null,
+  urgentStation = null,
   maxStops = 4,
 }) {
   const steps = [];
@@ -353,9 +354,14 @@ export function buildJourney({
   /** Un arrêt trop proche d'un autre déjà retenu n'apporte rien. */
   // La station de départ n'est pas sur l'itinéraire : elle n'entre pas dans
   // le calcul d'espacement, sinon elle interdirait tout arrêt du premier tiers.
+  //
+  // Un arrêt *imposé* — plein avant de partir, ravitaillement d'urgence — n'est
+  // pas un arrêt choisi : il ne doit pas interdire le suivant. Sinon un plein
+  // d'urgence au kilomètre 8 supprimait le dîner d'un départ à 20 h 52, faute
+  // de station à plus de 90 km encore dans le créneau du repas.
   const assezLoin = (candidat, espacement = MIN_STOP_SPACING_KM) =>
     steps
-      .filter((s) => Number.isFinite(s.station.distanceKm))
+      .filter((s) => !s.impose && Number.isFinite(s.station.distanceKm))
       .every((s) => Math.abs(s.station.distanceKm - candidat.station.distanceKm) >= espacement);
 
   const retenir = (candidat, kind, label, espacement) => {
@@ -392,13 +398,35 @@ export function buildJourney({
             : 'proche du départ',
         ],
         openStatus: 'inconnu',
+        impose: true,
       });
       pris.add(departureStation.id);
     }
   }
 
+  // 1 bis. Niveau critique : le ravitaillement est impose et passe avant tout.
+  //
+  // Il ouvre le fil du voyage, il ne le remplace pas. L'ecran court-circuitait
+  // ici tout le planificateur et n'affichait qu'une seule etape : sur 750 km au
+  // depart de 20 h 52, il restait 742 km et un diner a caler apres le plein.
+  // Une urgence carburant ne supprime ni le diner ni les pauses.
+  if (urgentStation) {
+    steps.push({
+      station: urgentStation,
+      kind: 'carburant',
+      label: 'Carburant urgent',
+      arrivalAt: urgentStation.arrivalAt ?? null,
+      reasons: ['niveau critique : station atteignable la plus sûre'],
+      openStatus: 'inconnu',
+      impose: true,
+    });
+    pris.add(urgentStation.id);
+  }
+
   // 2. Ravitaillement en route, si la suite du trajet le demande encore.
-  if (plan.fuelStopNeeded) {
+  if (urgentStation) {
+    // Le plein urgent couvre la suite : pas de second arret carburant ici.
+  } else if (plan.fuelStopNeeded) {
     // `rankStops` favorise déjà les stations proches de la limite d'autonomie ;
     // le premier candidat carburant du classement est donc le bon.
     const carburant = plan.stops.find((s) => s.necessity === 'carburant');
@@ -415,27 +443,76 @@ export function buildJourney({
 
   // 3. Un arrêt par repas traversé, dans l'ordre du voyage.
   for (const repas of plan.meals) {
-    const candidat = plan.stops.find((s) => s.meal === repas.label && !pris.has(s.station.id));
-    if (candidat) {
-      const majuscule = repas.label.charAt(0).toUpperCase() + repas.label.slice(1);
-      if (!retenir(candidat, 'repas', majuscule)) {
-        notes.push(`${majuscule} : l'arrêt le mieux placé est déjà retenu juste avant.`);
-      }
-    } else {
+    const majuscule = repas.label.charAt(0).toUpperCase() + repas.label.slice(1);
+    // Le meilleur candidat peut être trop proche d'un arrêt déjà retenu. On
+    // essaie alors le suivant du classement plutôt que de renoncer au repas :
+    // renoncer laissait un dîner non proposé alors qu'une autre station du
+    // créneau convenait parfaitement.
+    const candidats = plan.stops.filter((s) => s.meal === repas.label && !pris.has(s.station.id));
+    if (!candidats.length) {
       notes.push(`Aucune station avec restauration à l'heure du ${repas.label} sur cet itinéraire.`);
+      continue;
+    }
+    if (!candidats.some((c) => retenir(c, 'repas', majuscule))) {
+      notes.push(`${majuscule} : toutes les stations du créneau sont trop proches d'un arrêt déjà retenu.`);
     }
   }
 
-  // 4. Longue route sans autre motif : une pause de confort à mi-parcours.
-  if (!steps.length && durationMin > MAX_DRIVING_STRETCH_MIN && restant > MIN_STOP_SPACING_KM) {
-    const cible = currentKm + restant / 2;
-    const proche = [...plan.stops]
-      .filter((s) => !pris.has(s.station.id))
-      .sort(
-        (a, b) =>
-          Math.abs(a.station.distanceKm - cible) - Math.abs(b.station.distanceKm - cible),
-      )[0];
-    if (proche) retenir(proche, 'confort', 'Pause');
+  // 4. Aucune portion de conduite ne doit dépasser MAX_DRIVING_STRETCH_MIN.
+  //
+  // Cette étape ne se déclenchait que si le fil était vide (`!steps.length`).
+  // Un seul ravitaillement retenu suffisait donc à supprimer toute pause du
+  // reste du trajet : 6 h 32 de route ne proposaient qu'un arrêt. Or un plein
+  // n'est pas une pause, et rouler six heures d'affilée après avoir fait le
+  // plein reste rouler six heures d'affilée.
+  //
+  // On applique la règle telle qu'on la conduit : on roule au plus la durée
+  // maximale, puis on s'arrête. Donc on avance dans le voyage, et dès qu'un
+  // intervalle entre deux arrêts la dépasse, on y place la station **la plus
+  // tardive encore acceptable** — pas celle du milieu. Couper au milieu laisse
+  // une seconde moitié aussi longue que le maximum et gaspille un arrêt.
+  if (distanceKm > 0 && durationMin > 0) {
+    /** Distance parcourue pendant la durée de conduite maximale. */
+    const portee = (MAX_DRIVING_STRETCH_MIN / durationMin) * distanceKm;
+
+    // Bornes garde-fou : le voyage ne peut pas demander plus d'arrêts que la
+    // limite, et la boucle ne doit jamais tourner sans avancer.
+    for (let garde = 0; garde < maxStops && steps.length < maxStops; garde += 1) {
+      const bornes = [
+        currentKm,
+        ...steps.map((x) => x.station.distanceKm).filter((v) => Number.isFinite(v)),
+        distanceKm,
+      ].sort((a, b) => a - b);
+
+      // Premier intervalle trop long dans l'ordre du voyage.
+      let trou = null;
+      for (let i = 0; i < bornes.length - 1; i += 1) {
+        if (bornes[i + 1] - bornes[i] > portee) {
+          trou = { de: bornes[i], a: bornes[i + 1] };
+          break;
+        }
+      }
+      if (!trou) break;
+
+      const candidat = [...plan.stops]
+        .filter(
+          (x) =>
+            !pris.has(x.station.id) &&
+            Number.isFinite(x.station.distanceKm) &&
+            x.station.distanceKm > trou.de &&
+            x.station.distanceKm <= trou.de + portee,
+        )
+        // La plus tardive d'abord : rouler jusqu'au bout de ce qui est sûr.
+        .sort((a, b) => b.station.distanceKm - a.station.distanceKm)[0];
+
+      if (!candidat || !retenir(candidat, 'confort', 'Pause', Math.min(MIN_STOP_SPACING_KM, portee / 3))) {
+        const minutes = Math.round(((trou.a - trou.de) / distanceKm) * durationMin);
+        notes.push(
+          `Aucune station bien placée pour couper une portion de ${minutes} min de conduite.`,
+        );
+        break;
+      }
+    }
   }
 
   const km = (s) => (Number.isFinite(s.station.distanceKm) ? s.station.distanceKm : -1);

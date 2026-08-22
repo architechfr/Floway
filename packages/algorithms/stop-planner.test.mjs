@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { arrivalAtKm, buildJourney, mealsDuringTrip, rankStops, waitLevel, MIN_STOP_SPACING_KM } from './stop-planner.mjs';
+import { arrivalAtKm, buildJourney, mealsDuringTrip, rankStops, waitLevel, MAX_DRIVING_STRETCH_MIN, MIN_STOP_SPACING_KM } from './stop-planner.mjs';
 import { planEnergy } from './energy-model.mjs';
 import { formatTimeInZone, instantFromLocalInput } from './trip-clock.mjs';
 
@@ -268,14 +268,64 @@ test('les arrêts retenus ne se suivent pas de trop près', () => {
   assert.ok(ecarts.every((e) => e >= MIN_STOP_SPACING_KM), `écarts : ${ecarts.join(', ')}`);
 });
 
+/** Durée de conduite du plus long tronçon sans arrêt, en minutes. */
+const plusLongTroncon = (steps, distanceKm, durationMin, currentKm = 0) => {
+  const bornes = [currentKm, ...steps.map((s) => s.station.distanceKm).filter(Number.isFinite), distanceKm]
+    .sort((a, b) => a - b);
+  let pire = 0;
+  for (let i = 0; i < bornes.length - 1; i += 1) {
+    pire = Math.max(pire, ((bornes[i + 1] - bornes[i]) / distanceKm) * durationMin);
+  }
+  return pire;
+};
+
 test('longue route sans repas ni carburant : une pause de confort à mi-parcours', () => {
   const plan = trajet([station('debut', 40), station('milieu', 240), station('fin', 460)], {
     depart: '15:00', duree: 300, distance: 500,
   });
   const { steps } = buildJourney({ plan, distanceKm: 500, durationMin: 300 });
-  assert.equal(steps.length, 1);
-  assert.equal(steps[0].kind, 'confort');
+  assert.ok(steps.length >= 1, 'au moins une pause');
+  assert.ok(steps.every((s) => s.kind === 'confort'), steps.map((s) => s.kind).join(','));
   assert.equal(steps[0].station.id, 'milieu');
+  assert.ok(
+    plusLongTroncon(steps, 500, 300) <= MAX_DRIVING_STRETCH_MIN,
+    `tronçon le plus long : ${plusLongTroncon(steps, 500, 300).toFixed(0)} min`,
+  );
+});
+
+test('un ravitaillement ne supprime plus les pauses du reste du trajet', () => {
+  // Le cas constate : 750 km, 6 h 32, reservoir a 10 %. Le fil n'affichait
+  // qu'une seule etape — le plein — et laissait 742 km sans rien.
+  const stations = [];
+  for (let km = 20; km < 750; km += 40) stations.push(station(`s${km}`, km, { services: ['Carburant', 'Restauration'] }));
+  // 40 % de 1000 km d'autonomie : un ravitaillement est necessaire, mais on
+  // peut encore rouler — ce n'est pas le cas d'urgence, teste juste apres.
+  const energie = planEnergy({ capacity: 60, consumption: 6, levelPct: 40, distanceKm: 750 });
+  const plan = trajet(stations, { depart: '20:52', duree: 392, distance: 750, energie });
+  const { steps } = buildJourney({ plan, distanceKm: 750, durationMin: 392 });
+  assert.ok(steps.length > 1, `un seul arret sur 750 km : ${steps.map((s) => s.label).join(' | ')}`);
+  assert.ok(steps.some((s) => s.kind === 'carburant'), 'le ravitaillement reste propose');
+  assert.ok(
+    plusLongTroncon(steps, 750, 392) <= MAX_DRIVING_STRETCH_MIN,
+    `tronçon le plus long : ${plusLongTroncon(steps, 750, 392).toFixed(0)} min`,
+  );
+});
+
+test('carburant urgent : le plein ouvre le fil, il ne le remplace pas', () => {
+  const stations = [];
+  for (let km = 8; km < 750; km += 45) stations.push(station(`s${km}`, km, { services: ['Carburant', 'Restauration'] }));
+  const plan = trajet(stations, { depart: '20:52', duree: 392, distance: 750 });
+  const urgente = { id: 'urgente', distanceKm: 8, name: 'Émerainville' };
+  const { steps } = buildJourney({ plan, distanceKm: 750, durationMin: 392, urgentStation: urgente });
+  assert.equal(steps[0].station.id, 'urgente');
+  assert.equal(steps[0].label, 'Carburant urgent');
+  assert.ok(steps.length > 1, `le fil s'arrete au plein : ${steps.map((s) => s.label).join(' | ')}`);
+  // Un depart a 20 h 52 traverse le diner : il doit rester propose.
+  assert.ok(steps.some((s) => s.kind === 'repas'), steps.map((s) => `${s.kind}:${s.label}`).join(' | '));
+  assert.ok(
+    plusLongTroncon(steps, 750, 392) <= MAX_DRIVING_STRETCH_MIN,
+    `tronçon le plus long : ${plusLongTroncon(steps, 750, 392).toFixed(0)} min`,
+  );
 });
 
 test('trajet court : aucune pause imposée', () => {

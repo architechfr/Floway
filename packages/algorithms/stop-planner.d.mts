@@ -65,6 +65,8 @@ export type JourneyStep = {
   arrivalAt: Date | null;
   reasons: string[];
   openStatus: 'ouvert' | 'ferme' | 'inconnu';
+  /** Arrêt imposé (plein au départ, urgence) : exclu du calcul d'espacement. */
+  impose?: boolean;
 };
 
 export function buildJourney(input: {
@@ -74,5 +76,7 @@ export function buildJourney(input: {
   currentKm?: number;
   /** Station retenue pour faire le plein avant de partir. */
   departureStation?: { id: string; detourKm?: number; [key: string]: unknown } | null;
+  /** Station imposée par un niveau critique : ouvre le fil sans le fermer. */
+  urgentStation?: { id: string; distanceKm?: number; [key: string]: unknown } | null;
   maxStops?: number;
 }): { steps: JourneyStep[]; notes: string[] };

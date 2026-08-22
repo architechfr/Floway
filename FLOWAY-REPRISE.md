@@ -211,6 +211,34 @@ Après correction, même point de départ : 69 stations rendues sur 69 existante
 
 Limite qui demeure, et qui n'est pas un bug : le flux du ministère **ne porte aucune enseigne**, et ne contient que les stations qui déclarent leurs prix. Un Carrefour City qui ne déclare pas n'y figure pas, et aucune station n'y est nommée « Carrefour ». C'est une limite de la source, pas du filtre.
 
+## Retours du test du 20/08 — état
+
+Corrigés dans ce lot :
+- **Le fil du voyage s'arrêtait au plein.** `buildJourney` était court-circuité à une seule étape dès que le carburant était critique : 750 km, 6 h 32, un seul événement affiché. Un ravitaillement d'urgence ouvre désormais le fil au lieu de le remplacer (`urgentStation`).
+- **Aucune pause après un ravitaillement.** L'étape de confort ne se déclenchait que `if (!steps.length)` : un seul arrêt carburant retenu supprimait toute pause du reste du trajet. Remplacé par la règle réelle — on roule au plus `MAX_DRIVING_STRETCH_MIN`, puis on s'arrête — en plaçant la station **la plus tardive encore acceptable**, pas celle du milieu (couper au milieu laisse une seconde moitié aussi longue que le maximum et gaspille un arrêt).
+- **Un repas était abandonné** dès que son meilleur candidat était trop proche d'un arrêt déjà retenu. On essaie maintenant les candidats suivants du créneau.
+- **Les arrêts imposés bloquaient le suivant.** Un plein d'urgence au km 8 interdisait le dîner d'un départ à 20 h 52, faute de station à plus de 90 km encore dans le créneau. Un arrêt imposé (plein au départ, urgence) ne compte plus dans l'espacement.
+- **Le classement d'urgence ignorait le prix.** Tri purement kilométrique, d'où Émerainville. On y fait le plein *complet* : l'atteignabilité reste la contrainte, le prix devient l'objectif (0,10 €/L sur 60 L = 6 €, soit bien plus que quelques kilomètres).
+- **Après un plein d'urgence, la suite se planifiait sur le réservoir vide.** Même défaut que pour le plein au départ, corrigé de la même façon.
+- **Les intentions étaient verrouillées sur « Carburant ».** Un niveau critique impose le plein, il n'interdit pas d'avoir faim.
+- **« FLOWAY AI » dans la barre du bas était `<a href="/ev">`** — la page véhicule électrique, étiquetée « FLOWAY AI ». Renommée « ÉLECTRIQUE ».
+
+Faits ensuite :
+- **Couche de trafic.** Tuiles TomTom *Raster Flow*, format vérifié dans la documentation : `https://api.tomtom.com/traffic/map/4/tile/flow/{style}/{z}/{x}/{y}.png`, styles `absolute`, `relative`, `relative0`, `relative0-dark`, `relative-delay`, `reduced-sensitivity`. `relative0-dark` retenu : vitesse relative à la fluidité, sur fond sombre. **L'URL porte la clé d'API**, donc elle ne peut pas figurer dans le `src` d'une image : les tuiles passent par `/api/traffic-tiles/{z}/{x}/{y}`, qui valide strictement le pavage pour ne pas devenir un proxy ouvert. Sans clé, le relais répond 503 et la carte affiche « Trafic non connecté » plutôt qu'un calque muet. Sytadin est écarté : Île-de-France seulement, pas d'API publique.
+- **Aucun contrôle de la carte ne fonctionnait.** `setPointerCapture` était appelé dès `pointerdown` sur le cadre : le `click` était alors dispatché au cadre et non au bouton. Plan, vue aérienne, zoom, recadrer — tous inertes. Seuls les repères y échappaient, grâce à leur `stopPropagation`. La capture n'est désormais prise qu'au premier mouvement avéré. C'est la « carte non interactive » constatée.
+
+Restent ouverts :
+1. **Marques des stations.** Le flux du ministère n'en porte aucune ; enrichissement TomTom possible sur les seules étapes du fil (≤ 4 appels par trajet). Utile pour les cartes carburant.
+2. **Refonte du mode énergie.** `EnergyKind` connaît déjà `hybride` et `hybride-rechargeable`, mais l'écran traite l'énergie en binaire (`electricVehicle = energyKind === 'electrique'`). Une hybride rechargeable a **un réservoir et une batterie** : aucun des deux branchements actuels ne la décrit. Et `/ev` est un second formulaire complet, déconnecté du véhicule et du trajet déjà saisis — c'est pour cela qu'il n'a jamais servi.
+
+## Production : rien de tout cela n'est en ligne
+
+Vérifié le 22/08 : `git ls-remote` donne `main = cfd35e6`, inchangé depuis le début de ce chantier, et `refactor/phase-1-state-store = b0fd71d`. Contre-épreuve directe sur le site : `https://floway-app.vercel.app/api/stations-near` répond **404** — cette route n'existe que sur la branche.
+
+`POUSSER.ps1` pousse la **branche courante**. Tous les lots sont donc partis sur `refactor/phase-1-state-store`, et la production n'a jamais bougé. Les tests menés sur `floway-app.vercel.app` portaient sur le build d'avant la refonte : c'est ce qui explique les constats déjà corrigés depuis (carte, champs numériques, marque de station).
+
+`FUSIONNER.ps1` bascule la branche sur `main` après vérification de l'état de la CI.
+
 ## Règles de travail établies
 
 - Commits directs sur `main`. Branche + PR réservées aux gros chantiers risqués.
