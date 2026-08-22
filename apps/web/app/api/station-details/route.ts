@@ -15,6 +15,26 @@ function text(p:PoiResult){return `${p.poi?.name||''} ${(p.poi?.categories||[]).
 function isFuel(p:PoiResult){return /(petrol|fuel|gas station|station-service|station service|carburant)/.test(text(p));}
 function isFood(p:PoiResult){return /(restaurant|fast food|cafe|café|coffee|bakery|boulanger|sandwich|food)/.test(text(p));}
 function isShop(p:PoiResult){return /(shop|store|supermarket|convenience|boutique)/.test(text(p));}
+/**
+ * Station-service la plus proche, cherchee par categorie.
+ *
+ * `categorySearch/{query}` accepte un nom de categorie en texte libre : la
+ * documentation le dit, rien n'est devine ici.
+ */
+async function stationProche(key:string,lat:number,lon:number){
+ const u=new URL(`https://api.tomtom.com/search/2/categorySearch/${encodeURIComponent('station-service')}.json`);
+ u.searchParams.set('key',key);u.searchParams.set('lat',String(lat));u.searchParams.set('lon',String(lon));
+ u.searchParams.set('radius','1200');u.searchParams.set('limit','10');u.searchParams.set('countrySet','FR');
+ u.searchParams.set('language','fr-FR');u.searchParams.set('openingHours','nextSevenDays');
+ const r=await fetch(u,{headers:{Accept:'application/json'},next:{revalidate:900}});
+ if(!r.ok)return null;
+ const d=await r.json() as {results?:PoiResult[]};
+ const tries=(d.results||[]).sort((a,b)=>(a.dist||99999)-(b.dist||99999));
+ const reconnue=tries.filter(isFuel);
+ const proche=reconnue[0]||tries[0];
+ return proche?compact(proche):null;
+}
+
 function compact(p:PoiResult){return{name:p.poi?.name||'POI',brand:p.poi?.brands?.[0]?.name||null,categories:p.poi?.categories||[],distanceM:Math.round(p.dist||0),address:p.address?.freeformAddress||null,city:p.address?.municipality||null,phone:p.poi?.phone||null,url:p.poi?.url||null,openingHours:p.poi?.openingHours||null,lat:p.position?.lat||null,lon:p.position?.lon||null};}
 
 export async function GET(req:NextRequest){
@@ -30,8 +50,14 @@ export async function GET(req:NextRequest){
  try{
   const u=new URL('https://api.tomtom.com/search/2/nearbySearch/.json');u.searchParams.set('key',key);u.searchParams.set('lat',String(lat));u.searchParams.set('lon',String(lon));u.searchParams.set('radius','1200');u.searchParams.set('limit','40');u.searchParams.set('countrySet','FR');u.searchParams.set('language','fr-FR');u.searchParams.set('openingHours','nextSevenDays');
   const r=await fetch(u,{headers:{Accept:'application/json'},next:{revalidate:900}});if(!r.ok)throw new Error(`TOMTOM_${r.status}`);const d=await r.json() as {results?:PoiResult[]};const results=(d.results||[]).sort((a,b)=>(a.dist||99999)-(b.dist||99999));
-  const fuel=results.filter(isFuel);const food=results.filter(isFood);const shops=results.filter(isShop);
-  const station=fuel.find(x=>(x.dist||99999)<=500)||fuel[0]||null;
-  return NextResponse.json({provider:{name:'TomTom Search',connected:true,updatedAt:new Date().toISOString()},station:station?compact(station):null,restaurants:food.slice(0,12).map(compact),shops:shops.slice(0,8).map(compact),poiCount:results.length,searchCenter:{lat,lon}});
+  const food=results.filter(isFood);const shops=results.filter(isShop);
+  // `nearbySearch` rend les 40 POI les plus proches toutes categories
+  // confondues : en zone dense, aucune station-service n'y figure et
+  // `isFuel` ne trouvait rien. Constate en production — 40 POI ramenes et
+  // `station: null` a Ferrieres, Vierzon et Lyon. La station se cherche donc
+  // par categorie, ce que `categorySearch` permet avec un nom en texte libre,
+  // sans identifiant numerique a deviner.
+  const station=await stationProche(key,lat,lon);
+  return NextResponse.json({provider:{name:'TomTom Search',connected:true,updatedAt:new Date().toISOString()},station,restaurants:food.slice(0,12).map(compact),shops:shops.slice(0,8).map(compact),poiCount:results.length,searchCenter:{lat,lon}});
  }catch(e){return NextResponse.json({provider:{name:'TomTom Search',connected:false},station:null,restaurants:[],shops:[],error:e instanceof Error?e.message:'POI_ERROR'},{status:502});}
 }

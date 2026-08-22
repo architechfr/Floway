@@ -254,6 +254,16 @@ Les deux fonctions vivent dans `packages/algorithms/station-list.mjs`, pures et 
 
 Le sous-titre de la carte dit désormais « sur autoroute » ou la commune, au lieu de répéter l'adresse déjà remontée dans le titre.
 
+## L'enrichissement TomTom des stations était cassé — trouvé en production
+
+Vérifié après mise en ligne : `/api/station-brands` ne trouvait **aucune enseigne** sur six points testés. En creusant avec `/api/station-details`, la cause est apparue et elle est plus large : **40 POI ramenés, `station: null` partout** — à Ferrières-en-Brie, à Vierzon et à Lyon. L'enrichissement de la fiche station ne fonctionnait donc pas, et pas seulement pour les enseignes.
+
+Cause. Les deux routes appelaient `nearbySearch`, qui rend les points d'intérêt les plus proches **toutes catégories confondues**, plafonnés à 40. En zone dense, ces 40 sont des commerces et des restaurants : aucune station-service n'y figure, et le filtre par texte ne pouvait rien trouver. Même défaut de forme que la couverture du flux carburant — un tirage tronqué avant le filtre.
+
+Correction. `categorySearch/{query}` accepte un **nom de catégorie en texte libre**, pas un identifiant numérique : c'est écrit dans la documentation, il n'y a donc rien à deviner. C'est ce qui manquait quand `categorySet` avait été écarté faute de connaître le code de la catégorie. Les deux routes cherchent désormais `station-service` par catégorie, et le prédicat texte ne sert plus que de garde-fou.
+
+À vérifier en production après déploiement : le conteneur de développement n'a pas accès à TomTom, cette correction n'a donc pas pu être éprouvée contre l'API réelle avant d'être écrite.
+
 ## Enseignes des stations
 
 Le flux du ministère ne porte **aucune marque** — vérifié sur le catalogue de l'API. Or l'enseigne décide de l'arrêt pour qui possède une carte carburant, et c'est la première chose qu'on cherche dans une liste.

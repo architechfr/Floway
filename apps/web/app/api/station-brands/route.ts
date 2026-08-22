@@ -43,25 +43,36 @@ type PoiResult = {
 };
 
 /**
- * Reconnaît une station-service dans un résultat TomTom.
+ * Catégorie interrogée, en texte libre.
  *
- * Même prédicat que `/api/station-details`, éprouvé en production. On
- * n'emploie pas `categorySet` : la documentation confirme le paramètre mais la
- * page des codes ne donne pas le numéro de la catégorie « petrol station »,
- * et un code inventé filtrerait silencieusement tous les résultats.
+ * `categorySearch/{query}` accepte un **nom de catégorie**, pas un identifiant
+ * numérique : documenté, donc rien à deviner. C'est la correction du défaut
+ * constaté en production — `nearbySearch` rendait les 40 points d'intérêt les
+ * plus proches, toutes catégories confondues, et dans une zone dense aucune
+ * station-service ne s'y trouvait. Le filtre par texte ne pouvait donc rien
+ * trouver : `/api/station-details` renvoyait `station: null` partout, à
+ * Ferrières comme à Vierzon ou Lyon, avec pourtant 40 POI ramenés.
+ */
+const CATEGORIE = 'station-service';
+
+/**
+ * Garde-fou : la recherche par catégorie doit déjà ne rendre que des stations,
+ * mais on vérifie plutôt que de faire confiance à un intitulé.
  */
 function estStation(p: PoiResult) {
   const texte = `${p.poi?.name || ''} ${(p.poi?.categories || []).join(' ')}`.toLowerCase();
-  return /(petrol|fuel|gas station|station-service|station service|carburant)/.test(texte);
+  return /(petrol|fuel|gas station|station-service|station service|carburant|essence)/.test(texte);
 }
 
 async function enseigne(key: string, lat: number, lon: number) {
-  const u = new URL('https://api.tomtom.com/search/2/nearbySearch/.json');
+  const u = new URL(
+    `https://api.tomtom.com/search/2/categorySearch/${encodeURIComponent(CATEGORIE)}.json`,
+  );
   u.searchParams.set('key', key);
   u.searchParams.set('lat', String(lat));
   u.searchParams.set('lon', String(lon));
   u.searchParams.set('radius', String(RAYON_M));
-  u.searchParams.set('limit', '20');
+  u.searchParams.set('limit', '10');
   u.searchParams.set('countrySet', 'FR');
   u.searchParams.set('language', 'fr-FR');
   // Les enseignes bougent peu : une journée de cache évite de repayer le même
@@ -69,10 +80,11 @@ async function enseigne(key: string, lat: number, lon: number) {
   const r = await fetch(u, { headers: { Accept: 'application/json' }, next: { revalidate: 86400 } });
   if (!r.ok) return null;
   const d = (await r.json()) as { results?: PoiResult[] };
-  const stations = (d.results || [])
-    .filter(estStation)
-    .sort((a, b) => (a.dist || 99999) - (b.dist || 99999));
-  const proche = stations[0];
+  const tries = (d.results || []).sort((a, b) => (a.dist || 99999) - (b.dist || 99999));
+  // Si la recherche par catégorie rend malgré tout autre chose, on préfère une
+  // station reconnue ; à défaut, le plus proche résultat de la catégorie.
+  const stations = tries.filter(estStation);
+  const proche = stations[0] || tries[0];
   if (!proche) return null;
   const marque = proche.poi?.brands?.[0]?.name?.trim() || null;
   const nom = proche.poi?.name?.trim() || null;
