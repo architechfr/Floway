@@ -1,0 +1,66 @@
+/*
+ * Tableau du trafic : une carte a part, consultee pour elle-meme.
+ *
+ * Repliee par defaut — elle pese quelques dizaines de tuiles et n'a pas a se
+ * charger tant qu'on ne la regarde pas.
+ */
+
+.board {
+  margin: 16px 0;
+  padding: 20px;
+  border: 1px solid #20373d;
+  border-radius: 22px;
+  background: linear-gradient(180deg, #081418, #061014);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.26);
+}
+
+.head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.head span {
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 1.8px;
+  color: #ff9555;
+}
+
+.head h2 {
+  margin: 4px 0 0;
+  font-size: 20px;
+}
+
+.head button {
+  flex: none;
+  padding: 9px 13px;
+  border: 1px solid #2c4c3e;
+  border-radius: 999px;
+  background: #071116;
+  color: #7fe0b0;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+
+.head button:hover,
+.head button:focus-visible {
+  border-color: #4fc98d;
+  background: #0c2219;
+}
+
+.source {
+  margin: 10px 0 12px;
+  color: #8fa0a5;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+@media (max-width: 560px) {
+  .board { padding: 16px; }
+  .head h2 { font-size: 17px; }
+}

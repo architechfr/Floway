@@ -160,6 +160,37 @@ export function panView(view, dx, dy) {
 }
 
 /** Change le zoom en conservant le centre géographique. */
+/**
+ * Zoome en gardant fixe le point de l'écran passé en paramètre.
+ *
+ * Nécessaire au pincement : c'est le point entre les deux doigts qui doit
+ * rester sous eux, pas le centre de la carte. Zoomer sur le centre pendant un
+ * pincement décentré donne l'impression que la carte fuit.
+ *
+ * Les niveaux restent entiers : le pavage réclame un `TILEMATRIX` entier, et
+ * un zoom fractionnaire demanderait de redimensionner les tuiles.
+ *
+ * @param {object} view vue courante
+ * @param {number} delta variation de niveau, entière
+ * @param {object} ancre `{ x, y, width, height }` en pixels écran
+ */
+export function zoomViewAt(view, delta, { x, y, width, height, minZoom = 2, maxZoom = 17 } = {}) {
+  if (!view) return view;
+  if (!Number.isFinite(x) || !Number.isFinite(y) || !width || !height) {
+    return zoomView(view, delta, { minZoom, maxZoom });
+  }
+  const next = Math.max(minZoom, Math.min(maxZoom, view.zoom + delta));
+  if (next === view.zoom) return view;
+  const factor = 2 ** (next - view.zoom);
+  // Décalage du point d'ancrage par rapport au centre, invariant à l'écran.
+  const dx = x - width / 2;
+  const dy = y - height / 2;
+  // Coordonnées monde du point ancré, avant puis après changement d'échelle.
+  const mondeX = (view.centerX + dx) * factor;
+  const mondeY = (view.centerY + dy) * factor;
+  return { zoom: next, centerX: mondeX - dx, centerY: mondeY - dy };
+}
+
 export function zoomView(view, delta, { minZoom = 2, maxZoom = 17 } = {}) {
   if (!view) return view;
   const next = Math.max(minZoom, Math.min(maxZoom, view.zoom + delta));

@@ -29,18 +29,37 @@ const TITLE: Record<Exclude<ActionPanel, null>, string> = {
  * `requestSubmit()`) pour rejouer un favori. Ces boutons portent desormais
  * leur propre `onClick`, et rejouer un favori appelle directement le calcul.
  */
+export type AlertItem = {
+  id: string;
+  icon: string;
+  label: string;
+  description?: string;
+  roads?: string[];
+  distanceKm?: number | null;
+  delayMin?: number | null;
+  from?: string | null;
+  to?: string | null;
+};
+
 export default function ActionSheet({
   panel,
   onPanel,
   onPickRoute,
   onScrollToStations,
   onNotify,
+  alerts = [],
+  alertsConnected = false,
+  onAcknowledgeAlerts,
 }: {
   panel: ActionPanel;
   onPanel: (panel: ActionPanel) => void;
   onPickRoute: (origin: string, destination: string) => void;
   onScrollToStations: () => void;
   onNotify: (message: string) => void;
+  /** Incidents réels non encore acquittés, à afficher tels quels. */
+  alerts?: AlertItem[];
+  alertsConnected?: boolean;
+  onAcknowledgeAlerts?: () => void;
 }) {
   const { favoriteRoutes, removeFavoriteRoute } = useFlowayStore();
   const [shareUrl, setShareUrl] = useState('');
@@ -143,13 +162,61 @@ export default function ActionSheet({
 
         {panel === 'alerts' && (
           <div className={styles.content}>
-            <div className={styles.state}><i /> <span>Surveillance active</span></div>
-            <h3>Floway surveille ce qui peut modifier votre arrêt.</h3>
-            <p>Trafic, incidents, disponibilité des stations et changements importants alimentent progressivement la recommandation.</p>
+            {/* Le panneau annonçait « surveillance active » sans jamais dire ce
+                qui était surveillé : la pastille comptait des incidents que
+                rien ici ne montrait, et rien ne permettait de les éteindre. */}
+            <div className={styles.state}>
+              <i /> <span>{alertsConnected ? 'TomTom Traffic · temps réel' : 'Source trafic non connectée'}</span>
+            </div>
+            {alerts.length ? (
+              <>
+                <h3>
+                  {alerts.length} incident{alerts.length > 1 ? 's' : ''} sur votre route
+                </h3>
+                <p>Signalés par TomTom à moins de 35 km de votre position. Aucun radar ni danger n’est inventé.</p>
+                <div className={styles.alertList}>
+                  {alerts.map((a) => (
+                    <article key={a.id}>
+                      <b>{a.icon}</b>
+                      <div>
+                        <strong>
+                          {a.label}
+                          {a.roads?.length ? ` · ${a.roads.join(', ')}` : ''}
+                        </strong>
+                        <small>
+                          {[
+                            a.distanceKm != null ? `${a.distanceKm.toFixed(1)} km` : null,
+                            a.delayMin ? `+${a.delayMin} min` : null,
+                            a.from && a.to ? `${a.from} → ${a.to}` : null,
+                          ]
+                            .filter(Boolean)
+                            .join(' · ')}
+                        </small>
+                        {a.description && a.description !== a.label ? <p>{a.description}</p> : null}
+                      </div>
+                    </article>
+                  ))}
+                </div>
+                {onAcknowledgeAlerts && (
+                  <button type="button" className={styles.ackButton} onClick={onAcknowledgeAlerts}>
+                    MARQUER COMME LU
+                  </button>
+                )}
+              </>
+            ) : (
+              <>
+                <h3>Aucun incident signalé sur votre route.</h3>
+                <p>
+                  {alertsConnected
+                    ? 'TomTom ne remonte aucun incident dans la zone surveillée. Rien n’est affiché tant qu’une source réelle ne signale rien.'
+                    : 'La source trafic n’est pas connectée : Floway préfère ne rien afficher plutôt qu’une alerte inventée.'}
+                </p>
+              </>
+            )}
             <div className={styles.rows}>
-              <div><span>Trafic</span><b>Actif / couverture partielle</b></div>
+              <div><span>Trafic</span><b>{alertsConnected ? 'TomTom · temps réel' : 'Non connecté'}</b></div>
               <div><span>Stations</span><b>Prix officiels</b></div>
-              <div><span>GPS trajet</span><b>Disponible sur mobile</b></div>
+              <div><span>Zones de danger</span><b>Source à connecter</b></div>
             </div>
           </div>
         )}

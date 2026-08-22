@@ -11,6 +11,7 @@ export {
   unproject,
   worldSize,
   zoomView,
+  zoomViewAt,
 } from '../../../../../packages/algorithms/slippy-map.mjs';
 
 export type { MapTile, MapView } from '../../../../../packages/algorithms/slippy-map.mjs';

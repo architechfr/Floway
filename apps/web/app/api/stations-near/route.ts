@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { timeoutFetch } from '../_lib/http';
 import { cats, haversine, point, price, serviceList, type FuelRecord } from '../_lib/stations';
 import { stationOpeningHours } from '../../../../../packages/algorithms/fuel-station-hours.mjs';
+import { nombreDeRequete, positionDeRequete } from '../../../../../packages/algorithms/query-params.mjs';
 
 // Masque le `fetch` global pour ce module : tout appel sortant est abandonné
 // automatiquement au-delà du délai.
@@ -31,16 +32,23 @@ const FLUX_LIMIT = 100;
  * par couloir — d'où cette route distincte.
  */
 export async function GET(req: NextRequest) {
-  const lat = Number(req.nextUrl.searchParams.get('lat'));
-  const lon = Number(req.nextUrl.searchParams.get('lon'));
-  if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+  // `Number(null)` vaut 0 et 0 est fini : le motif precedent acceptait des
+  // coordonnees absentes comme le point 0°/0°, et n'appliquait jamais le rayon
+  // par defaut — la recherche au depart ne regardait qu'un kilometre.
+  const position = positionDeRequete(
+    req.nextUrl.searchParams.get('lat'),
+    req.nextUrl.searchParams.get('lon'),
+  );
+  if (!position) {
     return NextResponse.json({ error: 'Coordonnées de départ manquantes.' }, { status: 400 });
   }
+  const { lat, lon } = position;
 
-  const rayonDemande = Number(req.nextUrl.searchParams.get('radius'));
-  const rayon = Number.isFinite(rayonDemande)
-    ? Math.min(RAYON_MAX_KM, Math.max(1, rayonDemande))
-    : RAYON_DEFAUT_KM;
+  const rayon = nombreDeRequete(req.nextUrl.searchParams.get('radius'), {
+    min: 1,
+    max: RAYON_MAX_KM,
+    defaut: RAYON_DEFAUT_KM,
+  }) as number;
   const carburant = req.nextUrl.searchParams.get('fuel') || 'Gazole';
 
   try {

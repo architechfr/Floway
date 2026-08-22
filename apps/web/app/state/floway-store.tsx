@@ -40,6 +40,10 @@ const LAST_ORIGIN_KEY = 'floway:last-origin-gps';
 const LAST_ROUTE_KEY = 'floway:last-route';
 const SAVED_PLACES_KEY = 'floway:saved-places';
 const FAVORITE_ROUTES_KEY = 'floway:favorite-routes';
+const ACKNOWLEDGED_ALERTS_KEY = 'floway:alertes-acquittees';
+
+/** Au-dela, la liste d'acquittements ne sert plus a rien : on la borne. */
+const MAX_ACKNOWLEDGED_ALERTS = 200;
 /** Au-dela, les favoris les plus anciens sortent de la liste. */
 const MAX_FAVORITE_ROUTES = 8;
 /** Ancienne cle du layer `session-restore`, retiree en phase 1. */
@@ -177,6 +181,11 @@ type FlowayStore = {
 
   /** Itinéraires mis de côté, du plus récent au plus ancien. */
   favoriteRoutes: FavoriteRoute[];
+  /** Cles d'alertes deja vues, pour que la pastille puisse s'eteindre. */
+  acknowledgedAlerts: string[];
+  acknowledgeAlerts: (keys: string[]) => void;
+  /** Oublie les acquittements d'incidents qui ne sont plus sur la route. */
+  pruneAcknowledgedAlerts: (present: string[]) => void;
   /** Ajoute l'itinéraire s'il est absent, le retire s'il est déjà là. Rend l'état obtenu. */
   toggleFavoriteRoute: (origin: string, destination: string) => boolean;
   removeFavoriteRoute: (id: string) => void;
@@ -274,6 +283,18 @@ function readSavedPlaces(): SavedPlace[] {
   return [...fixed, ...extra];
 }
 
+/** Relit les alertes acquittees, en ne gardant que des cles exploitables. */
+function readAcknowledgedAlerts(): string[] {
+  let raw: unknown = null;
+  try {
+    raw = JSON.parse(localStorage.getItem(ACKNOWLEDGED_ALERTS_KEY) || '[]');
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((v): v is string => typeof v === 'string' && v.length > 0).slice(0, MAX_ACKNOWLEDGED_ALERTS);
+}
+
 /** Relit les itineraires favoris en verifiant leur forme. */
 function readFavoriteRoutes(): FavoriteRoute[] {
   let raw: unknown = null;
@@ -327,6 +348,7 @@ export function FlowayStoreProvider({ children }: { children: ReactNode }) {
   const [hydrated, setHydrated] = useState(false);
   const [savedPlaces, setSavedPlacesState] = useState<SavedPlace[]>(() => DEFAULT_PLACES.map((p) => ({ ...p })));
   const [favoriteRoutes, setFavoriteRoutesState] = useState<FavoriteRoute[]>([]);
+  const [acknowledgedAlerts, setAcknowledgedAlertsState] = useState<string[]>([]);
   const locateInFlight = useRef(false);
 
   // Hydratation depuis le stockage local, après le montage uniquement :
@@ -369,6 +391,7 @@ export function FlowayStoreProvider({ children }: { children: ReactNode }) {
     setLastRouteState(readLastRoute());
     setSavedPlacesState(readSavedPlaces());
     setFavoriteRoutesState(readFavoriteRoutes());
+    setAcknowledgedAlertsState(readAcknowledgedAlerts());
     try {
       localStorage.removeItem(LEGACY_SESSION_KEY);
     } catch {
@@ -429,6 +452,33 @@ export function FlowayStoreProvider({ children }: { children: ReactNode }) {
       return next;
     });
     return added;
+  }, []);
+
+  /** Marque des alertes comme vues. La pastille ne les compte plus. */
+  const acknowledgeAlerts = useCallback((keys: string[]) => {
+    const utiles = keys.filter((k) => typeof k === 'string' && k.length > 0);
+    if (!utiles.length) return;
+    setAcknowledgedAlertsState((current) => {
+      const next = [...new Set([...utiles, ...current])].slice(0, MAX_ACKNOWLEDGED_ALERTS);
+      writeStorage(ACKNOWLEDGED_ALERTS_KEY, JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  /**
+   * Oublie les acquittements d'incidents disparus.
+   *
+   * Sans cela, un bouchon resolu resterait acquitte pour toujours ; s'il
+   * revenait au meme endroit des mois plus tard, il ne serait jamais signale.
+   */
+  const pruneAcknowledgedAlerts = useCallback((present: string[]) => {
+    const vivantes = new Set(present);
+    setAcknowledgedAlertsState((current) => {
+      const next = current.filter((c) => vivantes.has(c));
+      if (next.length === current.length) return current;
+      writeStorage(ACKNOWLEDGED_ALERTS_KEY, JSON.stringify(next));
+      return next;
+    });
   }, []);
 
   const removeFavoriteRoute = useCallback((id: string) => {
@@ -542,6 +592,7 @@ export function FlowayStoreProvider({ children }: { children: ReactNode }) {
       lastRoute, setLastRoute, hydrated,
       savedPlaces, setPlaceAddress, addSavedPlace, removeSavedPlace,
       favoriteRoutes, toggleFavoriteRoute, removeFavoriteRoute,
+      acknowledgedAlerts, acknowledgeAlerts, pruneAcknowledgedAlerts,
     }),
     [
       originMode, setOriginMode, geoOrigin, geoOriginIsFresh, geoStatus, geoMessage, locate,
@@ -549,6 +600,7 @@ export function FlowayStoreProvider({ children }: { children: ReactNode }) {
       lastRoute, setLastRoute, hydrated,
       savedPlaces, setPlaceAddress, addSavedPlace, removeSavedPlace,
       favoriteRoutes, toggleFavoriteRoute, removeFavoriteRoute,
+      acknowledgedAlerts, acknowledgeAlerts, pruneAcknowledgedAlerts,
     ],
   );
 

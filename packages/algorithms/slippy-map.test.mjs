@@ -1,17 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  TILE_SIZE,
-  fitView,
-  panView,
-  project,
-  simplifyForDisplay,
-  tilesFor,
-  toScreen,
-  unproject,
-  worldSize,
-  zoomView,
-} from './slippy-map.mjs';
+import { TILE_SIZE, fitView, panView, project, simplifyForDisplay, tilesFor, toScreen, unproject, worldSize, zoomView, zoomViewAt } from './slippy-map.mjs';
 
 test('projection Web Mercator : repères connus', () => {
   // Au zoom 0, le monde tient dans une tuile de 256 px, centre en (128,128).
@@ -142,4 +131,50 @@ test('simplification : les extrémités sont préservées', () => {
   assert.deepEqual(simple[simple.length - 1], coords[coords.length - 1]);
   // Un trace deja court n'est pas touche.
   assert.equal(simplifyForDisplay(coords.slice(0, 10), 400).length, 10);
+});
+
+// --- zoom ancré sur un point de l'écran (pincement) -------------------------
+
+test('zoomViewAt garde le point ancré sous le doigt', () => {
+  const vue = { zoom: 8, centerX: 40000, centerY: 30000 };
+  const cadre = { width: 400, height: 300 };
+  const ancre = { x: 100, y: 75, ...cadre };
+
+  // Coordonnées monde du point ancré avant zoom.
+  const avant = {
+    x: vue.centerX + (ancre.x - cadre.width / 2),
+    y: vue.centerY + (ancre.y - cadre.height / 2),
+  };
+  const zoomee = zoomViewAt(vue, 1, ancre);
+  assert.equal(zoomee.zoom, 9);
+
+  // Après zoom, le même point du monde doit retomber au même endroit à l'écran.
+  const apres = {
+    x: zoomee.centerX + (ancre.x - cadre.width / 2),
+    y: zoomee.centerY + (ancre.y - cadre.height / 2),
+  };
+  assert.equal(Math.round(apres.x), Math.round(avant.x * 2));
+  assert.equal(Math.round(apres.y), Math.round(avant.y * 2));
+});
+
+test('zoomViewAt sur le centre équivaut à zoomView', () => {
+  const vue = { zoom: 8, centerX: 40000, centerY: 30000 };
+  const ancre = { x: 200, y: 150, width: 400, height: 300 };
+  assert.deepEqual(zoomViewAt(vue, 1, ancre), zoomView(vue, 1));
+  assert.deepEqual(zoomViewAt(vue, -1, ancre), zoomView(vue, -1));
+});
+
+test('zoomViewAt sans ancre exploitable retombe sur le zoom centré', () => {
+  const vue = { zoom: 8, centerX: 40000, centerY: 30000 };
+  assert.deepEqual(zoomViewAt(vue, 1, {}), zoomView(vue, 1));
+  assert.deepEqual(zoomViewAt(vue, 1, { x: Number.NaN, y: 0, width: 400, height: 300 }), zoomView(vue, 1));
+  assert.deepEqual(zoomViewAt(vue, 1, { x: 10, y: 10, width: 0, height: 0 }), zoomView(vue, 1));
+});
+
+test('zoomViewAt respecte les bornes de zoom', () => {
+  const ancre = { x: 100, y: 75, width: 400, height: 300 };
+  const haut = { zoom: 17, centerX: 1000, centerY: 1000 };
+  assert.deepEqual(zoomViewAt(haut, 1, ancre), haut);
+  const bas = { zoom: 2, centerX: 1000, centerY: 1000 };
+  assert.deepEqual(zoomViewAt(bas, -1, ancre), bas);
 });

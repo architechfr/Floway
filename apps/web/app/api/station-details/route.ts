@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { timeoutFetch } from '../_lib/http';
+import { positionDeRequete } from '../../../../../packages/algorithms/query-params.mjs';
 
 // Masque le `fetch` global pour ce module : tout appel sortant est abandonné
 // automatiquement au-delà du délai, sans modifier les points d'appel.
@@ -18,8 +19,11 @@ function compact(p:PoiResult){return{name:p.poi?.name||'POI',brand:p.poi?.brands
 
 export async function GET(req:NextRequest){
  const key=process.env.TOMTOM_API_KEY;
- const latParam=Number(req.nextUrl.searchParams.get('lat'));const lonParam=Number(req.nextUrl.searchParams.get('lon'));const q=req.nextUrl.searchParams.get('q')?.trim();
- let lat=Number.isFinite(latParam)?latParam:null,lon=Number.isFinite(lonParam)?lonParam:null;
+ const q=req.nextUrl.searchParams.get('q')?.trim();
+ // Number(null) vaut 0 et passe Number.isFinite : des coordonnees absentes
+ // devenaient le point 0°/0° et empechaient le repli par geocodage du nom.
+ const fournie=positionDeRequete(req.nextUrl.searchParams.get('lat'),req.nextUrl.searchParams.get('lon'));
+ let lat=fournie?.lat??null,lon=fournie?.lon??null;
  if((lat===null||lon===null)&&q){const g=await geocode(q);lat=g?.lat??null;lon=g?.lon??null;}
  if(lat===null||lon===null)return NextResponse.json({error:'Position de station introuvable.'},{status:400});
  if(!key)return NextResponse.json({provider:{name:'TomTom Search',connected:false},station:null,restaurants:[],shops:[],message:'Enrichissement POI prêt mais TOMTOM_API_KEY non configurée.'});

@@ -227,11 +227,77 @@ Faits ensuite :
 - **Couche de trafic.** Tuiles TomTom *Raster Flow*, format vérifié dans la documentation : `https://api.tomtom.com/traffic/map/4/tile/flow/{style}/{z}/{x}/{y}.png`, styles `absolute`, `relative`, `relative0`, `relative0-dark`, `relative-delay`, `reduced-sensitivity`. `relative0-dark` retenu : vitesse relative à la fluidité, sur fond sombre. **L'URL porte la clé d'API**, donc elle ne peut pas figurer dans le `src` d'une image : les tuiles passent par `/api/traffic-tiles/{z}/{x}/{y}`, qui valide strictement le pavage pour ne pas devenir un proxy ouvert. Sans clé, le relais répond 503 et la carte affiche « Trafic non connecté » plutôt qu'un calque muet. Sytadin est écarté : Île-de-France seulement, pas d'API publique.
 - **Aucun contrôle de la carte ne fonctionnait.** `setPointerCapture` était appelé dès `pointerdown` sur le cadre : le `click` était alors dispatché au cadre et non au bouton. Plan, vue aérienne, zoom, recadrer — tous inertes. Seuls les repères y échappaient, grâce à leur `stopPropagation`. La capture n'est désormais prise qu'au premier mouvement avéré. C'est la « carte non interactive » constatée.
 
-Restent ouverts :
-1. **Marques des stations.** Le flux du ministère n'en porte aucune ; enrichissement TomTom possible sur les seules étapes du fil (≤ 4 appels par trajet). Utile pour les cartes carburant.
-2. **Refonte du mode énergie.** `EnergyKind` connaît déjà `hybride` et `hybride-rechargeable`, mais l'écran traite l'énergie en binaire (`electricVehicle = energyKind === 'electrique'`). Une hybride rechargeable a **un réservoir et une batterie** : aucun des deux branchements actuels ne la décrit. Et `/ev` est un second formulaire complet, déconnecté du véhicule et du trajet déjà saisis — c'est pour cela qu'il n'a jamais servi.
+## Carte tactile, trafic dédié, alertes réelles — retour du 22/08
 
-## Production : rien de tout cela n'est en ligne
+**Pincement à deux doigts.** La carte ne se zoomait qu'aux boutons. `zoomViewAt` zoome désormais en gardant fixe le point entre les deux doigts — zoomer sur le centre pendant un pincement décentré donne l'impression que la carte fuit. Les niveaux restent entiers, le pavage réclamant un `TILEMATRIX` entier : on ne change de niveau qu'au franchissement d'un doublement ou d'une division par deux de l'écart, ce qui évite de sauter de niveau sur un tremblement de doigt. Un `pointerleave` sans `pointerup` ne laisse plus de pincement fantôme.
+
+**La touche « Trafic » semblait morte.** Elle fonctionnait, mais `ZOOM_TRAFIC_MIN` valait 6 alors que le cadrage par défaut d'un Paris–Marseille est plus large : on appuyait, et seule une petite mention « Zoomez pour afficher le trafic » apparaissait. Seuil ramené à 5, où le trafic autoroutier reste lisible.
+
+**Carte de trafic à part.** `TrafficBoard` est une section propre, repliée par défaut — elle pèse quelques dizaines de tuiles et n'a pas à se charger tant qu'on ne la regarde pas. Elle n'affiche ni arrêt ni classement : le tracé sert de repère, rien d'autre. Sans itinéraire, elle se cadre sur la position, avec un zoom plafonné (sur un point unique, l'ajustement choisirait le niveau le plus fin et donnerait une vue de quartier là où on attend une vue régionale).
+
+**La pastille d'alertes.** Elle n'était plus factice — c'est le nombre d'incidents TomTom réels — mais deux choses manquaient :
+
+- le panneau qu'elle ouvrait affichait « surveillance active » et trois lignes d'état, **sans jamais nommer les incidents comptés**. Il liste désormais chacun : nature, route, distance, retard, description, et sa source ;
+- rien ne permettait de l'éteindre. Un bouton « marquer comme lu » acquitte les alertes vues.
+
+L'acquittement supposait un identifiant stable, qui n'existait pas : `/api/safety` numérotait les incidents par leur **rang** dans la réponse (`incident-0`, `incident-1`…). Ce rang change dès qu'un incident apparaît ou disparaît — un acquittement enregistré sur `incident-2` aurait masqué un autre incident au relevé suivant. `cleIncident` dérive la clé de ce que l'incident *est* : catégorie, routes, extrémités, position arrondie à ~100 m. Un incident dont on ignore tout rend `null` et **reste affiché** : on ne le fait pas disparaître au motif qu'on ne sait pas l'identifier. Et les acquittements d'incidents disparus sont oubliés, sinon un bouchon résolu resterait acquitté pour toujours et ne serait jamais signalé s'il revenait.
+
+## Lisibilité de la carte et de la liste — retour du 22/08
+
+**Les repères écrasaient la carte.** Bug de spécificité CSS : `.stop circle` (0,1,1) l'emporte sur `.hit` (0,1,0), donc **la cible tactile invisible de 18 px de rayon était peinte**. À l'échelle de la France, cela donnait d'énormes ronds orange qui se chevauchaient et masquaient le tracé. Le voisin `.clickable:hover circle:not(.hit)` excluait déjà `.hit` — la règle de base l'avait oublié. Corrigé par `:not(.hit)` sur les trois règles de peinture, et `.hit` neutralisé sans condition.
+
+**Trois cartes titrées « Vierzon ».** Sans enseigne au flux et sans adresse nommant un lieu, `stationTitle` retombe sur la commune : rien ne distinguait les trois d'un coup d'œil. `distinguerTitres` complète le titre par la voie **uniquement là où il se répète** — une station seule dans sa commune garde « Vierzon », plus lisible que « avenue du 19 mars 1962 ». Sans adresse exploitable, le titre reste nu : l'ambiguïté demeure mais rien n'est inventé.
+
+**Le classement dispersait les communes.** Vierzon, Vierzon, Theillay, Salbris, Farges-Allichamps, Bourges, puis **Vierzon** à nouveau. Revoir plus bas une commune déjà vue se lit comme une erreur, même quand le score le justifie. `regrouperParLieu` rassemble chaque commune au rang de sa meilleure station, sans rien retirer ni déplacer d'un lieu à un autre : seule l'adjacence change.
+
+Les deux fonctions vivent dans `packages/algorithms/station-list.mjs`, pures et testées (9 tests, dont la non-perte et la non-duplication d'entrées, et le cas des stations sans commune identifiable qui ne doivent pas être fondues en un faux ensemble).
+
+Le sous-titre de la carte dit désormais « sur autoroute » ou la commune, au lieu de répéter l'adresse déjà remontée dans le titre.
+
+## Enseignes des stations
+
+Le flux du ministère ne porte **aucune marque** — vérifié sur le catalogue de l'API. Or l'enseigne décide de l'arrêt pour qui possède une carte carburant, et c'est la première chose qu'on cherche dans une liste.
+
+`/api/station-details` savait déjà la lire chez TomTom, mais une station à la fois, à l'ouverture de la fiche. `/api/station-brands` fait le même travail par lot, plafonné à **6 stations par appel** : chaque station coûte un appel TomTom, donc l'enrichissement est réservé aux étapes du voyage et à l'arrêt recommandé — ce qui est réellement lu — jamais à la liste entière. Cache d'une journée : les enseignes bougent peu.
+
+`categorySet` n'est **pas** employé : la documentation confirme le paramètre, mais la page des codes ne donne pas le numéro de la catégorie « petrol station », et un code inventé filtrerait silencieusement tous les résultats. On garde le prédicat texte déjà éprouvé en production sur `station-details`.
+
+Ce qui manque reste dit : une station sans enseigne trouvée rend `null`. Aucune marque n'est déduite du nom de la commune ni de l'adresse — et sans marque déclarée par TomTom, le nom du point d'intérêt ne la remplace pas, car il vaut souvent l'adresse.
+
+Reste à faire de ce côté : filtrer la liste par enseigne, pour les porteurs de cartes. Cela suppose d'enrichir plus de stations que six, donc un choix de coût.
+
+Restent ouverts :
+1. **Refonte du mode énergie.** `EnergyKind` connaît déjà `hybride` et `hybride-rechargeable`, mais l'écran traite l'énergie en binaire (`electricVehicle = energyKind === 'electrique'`). Une hybride rechargeable a **un réservoir et une batterie** : aucun des deux branchements actuels ne la décrit. Et `/ev` est un second formulaire complet, déconnecté du véhicule et du trajet déjà saisis — c'est pour cela qu'il n'a jamais servi.
+
+## En ligne depuis le 22/08
+
+`main` est passé de `cfd35e6` à `e6fb2a9` : les 7 commits du chantier sont en production. Vérifié sur le site — `/api/stations-near` répond 200 et rend en premier l'Intermarché de Ferrières-en-Brie (ZAC DES HAUTS DE FERRIERES), à 0,4 km, exactement la station qui manquait au test. `/api/traffic-tiles/10/517/352` rend une image PNG : la clé TomTom est bien configurée sur Vercel, la couche de trafic fonctionne.
+
+**Leçon retenue** : `POUSSER.ps1` pousse la branche courante. Il faut `FUSIONNER.ps1` pour mettre en production. Sans quoi on teste du vieux code et on corrige à l'aveugle — ce qui est arrivé pendant plusieurs jours.
+
+Et les scripts PowerShell doivent rester en **ASCII pur** : Windows PowerShell 5.1 lit les `.ps1` en CP1252 faute de BOM, et un tiret cadratin `—` s'y décode en une séquence dont le dernier octet est `"`, que PowerShell accepte comme guillemet fermant. Une chaîne se referme alors en plein milieu.
+
+## `Number(null)` vaut 0 — cinq routes touchées
+
+Trouvé en vérifiant le premier appel en production : `/api/stations-near` renvoyait `radiusKm: 1` alors que le défaut est 8.
+
+`URLSearchParams.get()` rend `null` quand le paramètre est absent, et **`Number(null)` vaut `0`, qui est fini**. Le motif employé partout —
+
+```ts
+const lat = Number(params.get('lat'));
+if (!Number.isFinite(lat)) return erreur;
+```
+
+— ne détecte donc jamais un paramètre manquant : il le remplace silencieusement par zéro.
+
+Conséquences réelles :
+- `/api/stations-near` : sans `radius`, la valeur devenait 0, passait le test de finitude, puis était ramenée à 1 km par la borne basse. **La station d'à côté n'était cherchée que dans un rayon d'un kilomètre.**
+- `/api/reverse-geocode`, `/api/safety` : coordonnées ou bbox absentes traitées comme le point 0°/0°, au large du golfe de Guinée.
+- `/api/station-details`, `/api/station-fuels` : des coordonnées absentes devenaient 0°/0° et **empêchaient le repli par géocodage du nom**, qui n'était donc jamais atteint.
+
+Corrigé par `packages/algorithms/query-params.mjs` — module pur, 10 tests : `nombreDeRequete` (absent, vide, illisible, infini → défaut ; bornes appliquées à la valeur lue, pas au défaut ; un `0` explicite reste un zéro) et `positionDeRequete` (couple incomplet → null ; coordonnée hors du monde refusée plutôt que ramenée à la borne, corriger silencieusement reviendrait à inventer un lieu).
+
+## Historique : la production est restée figée jusqu'au 22/08
 
 Vérifié le 22/08 : `git ls-remote` donne `main = cfd35e6`, inchangé depuis le début de ce chantier, et `refactor/phase-1-state-store = b0fd71d`. Contre-épreuve directe sur le site : `https://floway-app.vercel.app/api/stations-near` répond **404** — cette route n'existe que sur la branche.
 

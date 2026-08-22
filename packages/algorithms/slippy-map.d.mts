@@ -35,6 +35,12 @@ export function simplifyForDisplay(
 
 export function panView(view: MapView, dx: number, dy: number): MapView;
 
+export function zoomViewAt(
+  view: MapView,
+  delta: number,
+  ancre?: { x?: number; y?: number; width?: number; height?: number; minZoom?: number; maxZoom?: number },
+): MapView;
+
 export function zoomView(
   view: MapView,
   delta: number,

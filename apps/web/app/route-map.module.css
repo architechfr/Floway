@@ -53,14 +53,20 @@
 .start { fill: #4ecb88; stroke: #06140f; stroke-width: 2.5; }
 .end { fill: #ff6b22; stroke: #06140f; stroke-width: 2.5; }
 
-.stop circle {
+/* `:not(.hit)` est indispensable : `.stop circle` a une specificite (0,1,1)
+   superieure a `.hit` (0,1,0), et peignait donc la cible tactile invisible de
+   18 px de rayon. Sur une carte a l'echelle de la France, cela donnait
+   d'enormes ronds orange qui se chevauchaient et masquaient le trace. Le
+   voisin `.clickable:hover circle:not(.hit)` excluait deja `.hit` — la regle
+   de base, elle, l'avait oublie. */
+.stop circle:not(.hit) {
   fill: #f2f7f4;
   stroke: #06140f;
   stroke-width: 2.5;
 }
 
-.stop[data-kind='carburant'] circle { fill: #ffc178; }
-.stop[data-kind='repas'] circle { fill: #7fe6a7; }
+.stop[data-kind='carburant'] circle:not(.hit) { fill: #ffc178; }
+.stop[data-kind='repas'] circle:not(.hit) { fill: #7fe6a7; }
 
 /* Repère bleu pour les aires d'autoroute, cohérent avec la liste. */
 .stop rect { fill: #2f6fd0; stroke: #06140f; stroke-width: 1.5; }
@@ -146,8 +152,8 @@
 }
 
 .hit {
-  fill: transparent;
-  stroke: none;
+  fill: transparent !important;
+  stroke: none !important;
 }
 
 .clickable:hover circle:not(.hit) {

@@ -22,6 +22,7 @@ import {
   tilesFor,
   toScreen,
   zoomView,
+  zoomViewAt,
   type MapView,
 } from './lib/map/slippy-map';
 import styles from './route-map.module.css';
@@ -47,11 +48,13 @@ const tileUrl = (layer: LayerId, x: number, y: number, z: number) =>
 const trafficTileUrl = (x: number, y: number, z: number) => `/api/traffic-tiles/${z}/${x}/${y}`;
 
 /**
- * Zoom en deçà duquel la couche de trafic n'apporte rien : à l'échelle d'un
- * trajet Paris–Marseille, les axes se superposent et la couleur devient
- * illisible. On la propose, mais on dit pourquoi elle ne s'affiche pas.
+ * Zoom en deçà duquel la couche de trafic n'apporte rien : les axes se
+ * superposent et la couleur devient illisible. Le seuil était à 6, ce qui
+ * masquait la couche sur une vue France entière — exactement le cadrage par
+ * défaut d'un Paris–Marseille : on appuyait sur « Trafic » et rien
+ * n'apparaissait. À 5, le trafic autoroutier reste lisible.
  */
-const ZOOM_TRAFIC_MIN = 6;
+const ZOOM_TRAFIC_MIN = 5;
 
 export type MapStop = {
   id: string;
@@ -71,14 +74,32 @@ type Props = {
   height?: number;
   /** Appele quand un repere est active, au clic ou au clavier. */
   onSelectStop?: (id: string) => void;
+  /** Couche de trafic active des l'affichage. */
+  traffic?: boolean;
+  /**
+   * Zoom maximal du cadrage initial.
+   *
+   * Sur un point unique — une position sans itineraire — le cadrage choisit
+   * sinon le zoom le plus fin possible, ce qui donne une vue de quartier la ou
+   * on attend une vue regionale.
+   */
+  fitMaxZoom?: number;
 };
 
-export default function RouteMap({ geometry, stops = [], live = null, height = 280, onSelectStop }: Props) {
+export default function RouteMap({
+  geometry,
+  stops = [],
+  live = null,
+  height = 280,
+  onSelectStop,
+  traffic: traficInitial = false,
+  fitMaxZoom,
+}: Props) {
   const frame = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 0, height });
   const [layer, setLayer] = useState<LayerId>('plan');
   // Couche de trafic : demandée par l'utilisateur, donc jamais imposée.
-  const [trafic, setTrafic] = useState(false);
+  const [trafic, setTrafic] = useState(traficInitial);
   // Le relais répond 503 sans clé TomTom. On l'affiche au lieu de laisser un
   // calque muet laisser croire à une route déserte.
   const [traficIndisponible, setTraficIndisponible] = useState(false);
@@ -89,6 +110,12 @@ export default function RouteMap({ geometry, stops = [], live = null, height = 2
   // aucun bouton de la carte ne repondait — plan, vue aerienne, zoom, recadrer,
   // trafic. Les reperes y echappaient seuls, par `stopPropagation`.
   const drag = useRef<{ x: number; y: number; id: number; capture: boolean } | null>(null);
+  // Pointeurs actifs sur le cadre : deux doigts posés valent un pincement.
+  const pointeurs = useRef(new Map<number, { x: number; y: number }>());
+  // Écart initial du pincement et vue au moment où il a commencé. Le zoom du
+  // pavage est entier : on ne change de niveau qu'au franchissement d'un
+  // doublement ou d'une division par deux de l'écart.
+  const pince = useRef<{ ecart: number; x: number; y: number } | null>(null);
 
   // La largeur n'est connue qu'après le montage : on la mesure et on la suit.
   useEffect(() => {
@@ -107,9 +134,9 @@ export default function RouteMap({ geometry, stops = [], live = null, height = 2
   // déplacement manuel : reprendre la main à l'utilisateur serait pénible.
   useEffect(() => {
     if (!path.length || !size.width) return;
-    setView(fitView(path, size.width, size.height, { padding: 26 }));
+    setView(fitView(path, size.width, size.height, { padding: 26, ...(fitMaxZoom ? { maxZoom: fitMaxZoom } : {}) }));
     setMoved(false);
-  }, [path, size.width, size.height]);
+  }, [path, size.width, size.height, fitMaxZoom]);
 
   const tiles = useMemo(
     () => (view ? tilesFor(view, size.width, size.height) : []),
@@ -144,9 +171,18 @@ export default function RouteMap({ geometry, stops = [], live = null, height = 2
       ? toScreen(path[path.length - 1][0], path[path.length - 1][1], view, size.width, size.height)
       : null;
 
+  const relacher = (e: React.PointerEvent<HTMLDivElement>) => {
+    pointeurs.current.delete(e.pointerId);
+    if (pointeurs.current.size < 2) pince.current = null;
+    if (drag.current?.capture && e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+    drag.current = null;
+  };
+
   const recadrer = () => {
     if (!path.length || !size.width) return;
-    setView(fitView(path, size.width, size.height, { padding: 26 }));
+    setView(fitView(path, size.width, size.height, { padding: 26, ...(fitMaxZoom ? { maxZoom: fitMaxZoom } : {}) }));
     setMoved(false);
   };
 
@@ -156,9 +192,54 @@ export default function RouteMap({ geometry, stops = [], live = null, height = 2
         ref={frame}
         className={styles.frame}
         onPointerDown={(e) => {
+          pointeurs.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+          if (pointeurs.current.size === 2) {
+            // Deuxième doigt : on passe en pincement et on abandonne le
+            // déplacement à un doigt, sinon la carte glisserait en zoomant.
+            const [a, b] = [...pointeurs.current.values()];
+            pince.current = {
+              ecart: Math.hypot(a.x - b.x, a.y - b.y),
+              x: (a.x + b.x) / 2,
+              y: (a.y + b.y) / 2,
+            };
+            drag.current = null;
+            return;
+          }
           drag.current = { x: e.clientX, y: e.clientY, id: e.pointerId, capture: false };
         }}
         onPointerMove={(e) => {
+          if (pointeurs.current.has(e.pointerId)) {
+            pointeurs.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+          }
+
+          // --- pincement à deux doigts -------------------------------------
+          if (pointeurs.current.size >= 2 && pince.current && view) {
+            const [a, b] = [...pointeurs.current.values()];
+            const ecart = Math.hypot(a.x - b.x, a.y - b.y);
+            if (ecart < 24 || pince.current.ecart < 24) return;
+            const rapport = ecart / pince.current.ecart;
+            // Un niveau de pavage vaut un facteur deux : on n'agit qu'au
+            // franchissement, ce qui évite de sauter de niveau sur un
+            // tremblement de doigt.
+            const pas = rapport >= 2 ? 1 : rapport <= 0.5 ? -1 : 0;
+            if (pas !== 0) {
+              const cadre = e.currentTarget.getBoundingClientRect();
+              setView((v) =>
+                v
+                  ? zoomViewAt(v, pas, {
+                      x: (a.x + b.x) / 2 - cadre.left,
+                      y: (a.y + b.y) / 2 - cadre.top,
+                      width: cadre.width,
+                      height: cadre.height,
+                    })
+                  : v,
+              );
+              setMoved(true);
+              pince.current = { ecart, x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+            }
+            return;
+          }
+
           if (!drag.current || !view) return;
           const dx = e.clientX - drag.current.x;
           const dy = e.clientY - drag.current.y;
@@ -176,16 +257,15 @@ export default function RouteMap({ geometry, stops = [], live = null, height = 2
           setMoved(true);
         }}
         onPointerUp={(e) => {
-          if (drag.current?.capture && e.currentTarget.hasPointerCapture(e.pointerId)) {
-            e.currentTarget.releasePointerCapture(e.pointerId);
-          }
-          drag.current = null;
+          relacher(e);
         }}
         onPointerCancel={(e) => {
-          if (drag.current?.capture && e.currentTarget.hasPointerCapture(e.pointerId)) {
-            e.currentTarget.releasePointerCapture(e.pointerId);
-          }
-          drag.current = null;
+          relacher(e);
+        }}
+        onPointerLeave={(e) => {
+          // Un doigt qui quitte le cadre sans `pointerup` laisserait un
+          // pincement fantôme, et le doigt restant ne déplacerait plus rien.
+          if (!e.currentTarget.hasPointerCapture(e.pointerId)) relacher(e);
         }}
       >
         {tiles.map((t) => (

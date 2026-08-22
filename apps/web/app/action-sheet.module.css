@@ -88,3 +88,67 @@
 @media (prefers-reduced-motion: reduce) {
   .state i { animation: none; }
 }
+
+/* --- Incidents reels du panneau d'alertes ---------------------------------
+   Le panneau annoncait « surveillance active » sans jamais montrer ce qui
+   etait surveille. La pastille comptait, le panneau ne disait rien. */
+
+.alertList {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.alertList article {
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid #2c4c3e;
+  border-radius: 12px;
+  background: rgba(6, 18, 13, 0.9);
+}
+
+.alertList b {
+  font-size: 1.1rem;
+  line-height: 1.2;
+}
+
+.alertList strong {
+  display: block;
+  font-size: 0.86rem;
+}
+
+.alertList small {
+  display: block;
+  margin-top: 2px;
+  color: #93b0a3;
+  font-size: 0.72rem;
+}
+
+.alertList p {
+  margin: 6px 0 0;
+  color: #b9cdc4;
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
+.ackButton {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #2f6b52;
+  border-radius: 12px;
+  background: #123528;
+  color: #7fe0b0;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+
+.ackButton:hover,
+.ackButton:focus-visible {
+  border-color: #4fc98d;
+  background: #164031;
+}
