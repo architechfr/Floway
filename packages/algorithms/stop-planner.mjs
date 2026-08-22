@@ -109,6 +109,32 @@ export function mealsDuringTrip(departureAt, durationMin, timeZone = TRIP_TIME_Z
 const pad = (n) => String(n).padStart(2, '0');
 
 /**
+ * Seuils d'affluence, en minutes d'attente estimées par le modèle Floway.
+ *
+ * Ils vivent ici et non dans l'interface : le classement et l'affichage
+ * doivent parler de la même chose. Le modèle produit un ordre de grandeur,
+ * pas une file d'attente mesurée — d'où trois niveaux et non un chiffre au
+ * dixième de minute.
+ */
+export const WAIT_LEVELS = [
+  { id: 'faible', label: 'Faible', icon: '🟢', upTo: 4 },
+  { id: 'moderee', label: 'Modérée', icon: '🟠', upTo: 7 },
+  { id: 'forte', label: 'Forte', icon: '🔴', upTo: Infinity },
+];
+
+/**
+ * Niveau d'affluence d'une station, ou `null` si le modèle n'a rien produit.
+ *
+ * L'absence d'estimation reste explicite : aucun niveau n'est inventé pour
+ * une station dont l'attente est inconnue.
+ */
+export function waitLevel(waitMin) {
+  if (!Number.isFinite(waitMin)) return null;
+  const level = WAIT_LEVELS.find((l) => waitMin <= l.upTo) || WAIT_LEVELS.at(-1);
+  return { id: level.id, label: level.label, icon: level.icon, waitMin };
+}
+
+/**
  * Classe les stations à venir selon le besoin réel.
  *
  * @param {object} input
@@ -217,6 +243,20 @@ export function rankStops({
       }
     }
 
+    // --- affluence -----------------------------------------------------------
+    // Le modèle d'attente pesait déjà dans le score, mais sans jamais le dire :
+    // un arrêt pouvait être écarté pour son affluence sans que rien à l'écran
+    // ne l'explique. Le niveau est donc rendu avec le classement.
+    const crowd = waitLevel(station.waitMin);
+    if (crowd && ahead.length > 1 && waits && waits.max !== waits.min) {
+      // Ne se prononcer que si la station se détache du lot : dire « affluence
+      // modérée » de toutes les stations n'apprend rien.
+      const relatif = norm(station.waitMin, waits);
+      if (relatif <= 0.25 || relatif >= 0.75) {
+        reasons.push(`affluence prévue ${crowd.label.toLowerCase()} à votre heure de passage`);
+      }
+    }
+
     const penalty =
       WEIGHTS.wait * norm(station.waitMin, waits) +
       WEIGHTS.detour * norm(station.detourMin, detours) +
@@ -229,6 +269,8 @@ export function rankStops({
       arrivalAt: at,
       openStatus: status,
       meal: mealAtThisStop,
+      /** Niveau d'affluence estimé, ou null si le modèle n'a rien produit. */
+      waitLevel: crowd,
       /** Pourquoi cet arrêt vaut le coup, en clair. */
       reasons,
       /** Plus bas = meilleur. */
@@ -246,4 +288,234 @@ export function rankStops({
     fuelStopNeeded: fuelLimitKm !== null,
     stops,
   };
+}
+
+/**
+ * Espacement minimal entre deux arrêts proposés.
+ *
+ * Trois arrêts à 40, 120 et 160 km ne forment pas un voyage : on ferait le
+ * plein, puis l'appoint. En deçà de cette distance, le second arrêt n'apporte
+ * rien que le premier ne couvre déjà.
+ */
+export const MIN_STOP_SPACING_KM = 90;
+
+/**
+ * Durée de conduite au-delà de laquelle une pause s'impose, même sans repas
+ * ni ravitaillement. La sécurité routière recommande une pause toutes les
+ * deux heures ; on laisse une marge avant de la proposer.
+ */
+export const MAX_DRIVING_STRETCH_MIN = 150;
+
+/**
+ * Construit le fil du voyage à partir d'un classement.
+ *
+ * `rankStops` dit quelles stations valent le détour ; cette fonction décide
+ * lesquelles retenir et pourquoi. Elle applique la logique que l'utilisateur
+ * attend, dans cet ordre :
+ *
+ *  1. réservoir insuffisant → un ravitaillement, placé au plus tard possible
+ *     avant la réserve ;
+ *  2. repas traversés par le trajet → un arrêt par repas, à l'heure ;
+ *  3. longue route sans autre motif → une pause de confort.
+ *
+ * Quand le réservoir suffit, aucun arrêt carburant n'est propose : c'est le
+ * cas qui posait probleme, une pause a 131 km avec le plein fait.
+ *
+ * `notes` porte ce qui n'est délibérément pas proposé, pour que l'absence
+ * d'arrêt soit lisible au lieu de passer pour un oubli.
+ *
+ * @param {object} input
+ * @param {StopPlanLike} input.plan résultat de `rankStops`
+ * @param {number} input.distanceKm distance totale
+ * @param {number} input.durationMin durée de conduite
+ * @param {number} input.currentKm point kilométrique actuel
+ * @param {object|null} [input.departureStation] station retenue pour faire le
+ *   plein avant de partir, ou null
+ * @param {number} [input.maxStops] nombre maximum d'arrêts retenus
+ */
+export function buildJourney({
+  plan,
+  distanceKm = 0,
+  durationMin = 0,
+  currentKm = 0,
+  departureStation = null,
+  urgentStation = null,
+  maxStops = 4,
+}) {
+  const steps = [];
+  const notes = [];
+  if (!plan || !Array.isArray(plan.stops) || !plan.stops.length) {
+    return { steps, notes };
+  }
+
+  const restant = Math.max(0, distanceKm - currentKm);
+  const pris = new Set();
+
+  /** Un arrêt trop proche d'un autre déjà retenu n'apporte rien. */
+  // La station de départ n'est pas sur l'itinéraire : elle n'entre pas dans
+  // le calcul d'espacement, sinon elle interdirait tout arrêt du premier tiers.
+  //
+  // Un arrêt *imposé* — plein avant de partir, ravitaillement d'urgence — n'est
+  // pas un arrêt choisi : il ne doit pas interdire le suivant. Sinon un plein
+  // d'urgence au kilomètre 8 supprimait le dîner d'un départ à 20 h 52, faute
+  // de station à plus de 90 km encore dans le créneau du repas.
+  const assezLoin = (candidat, espacement = MIN_STOP_SPACING_KM) =>
+    steps
+      .filter((s) => !s.impose && Number.isFinite(s.station.distanceKm))
+      .every((s) => Math.abs(s.station.distanceKm - candidat.station.distanceKm) >= espacement);
+
+  const retenir = (candidat, kind, label, espacement) => {
+    if (!candidat || pris.has(candidat.station.id)) return false;
+    if (!assezLoin(candidat, espacement)) return false;
+    pris.add(candidat.station.id);
+    steps.push({
+      station: candidat.station,
+      kind,
+      label,
+      arrivalAt: candidat.arrivalAt,
+      reasons: candidat.reasons,
+      openStatus: candidat.openStatus,
+    });
+    return true;
+  };
+
+  // 1. Faire le plein avant de partir, quand une station proche du départ a
+  // été trouvée : c'est ce que fait un conducteur qui sait son réservoir bas,
+  // plutôt que de rouler jusqu'à la première station de l'itinéraire.
+  //
+  // L'appelant ne fournit cette station que si le plein est nécessaire ; le
+  // `plan` reçu décrit alors la suite du trajet *une fois le plein fait*.
+  {
+    if (departureStation) {
+      steps.push({
+        station: departureStation,
+        kind: 'carburant',
+        label: 'Plein avant de partir',
+        arrivalAt: null,
+        reasons: [
+          departureStation.detourKm != null
+            ? `à ${departureStation.detourKm} km du départ`
+            : 'proche du départ',
+        ],
+        openStatus: 'inconnu',
+        impose: true,
+      });
+      pris.add(departureStation.id);
+    }
+  }
+
+  // 1 bis. Niveau critique : le ravitaillement est impose et passe avant tout.
+  //
+  // Il ouvre le fil du voyage, il ne le remplace pas. L'ecran court-circuitait
+  // ici tout le planificateur et n'affichait qu'une seule etape : sur 750 km au
+  // depart de 20 h 52, il restait 742 km et un diner a caler apres le plein.
+  // Une urgence carburant ne supprime ni le diner ni les pauses.
+  if (urgentStation) {
+    steps.push({
+      station: urgentStation,
+      kind: 'carburant',
+      label: 'Carburant urgent',
+      arrivalAt: urgentStation.arrivalAt ?? null,
+      reasons: ['niveau critique : station atteignable la plus sûre'],
+      openStatus: 'inconnu',
+      impose: true,
+    });
+    pris.add(urgentStation.id);
+  }
+
+  // 2. Ravitaillement en route, si la suite du trajet le demande encore.
+  if (urgentStation) {
+    // Le plein urgent couvre la suite : pas de second arret carburant ici.
+  } else if (plan.fuelStopNeeded) {
+    // `rankStops` favorise déjà les stations proches de la limite d'autonomie ;
+    // le premier candidat carburant du classement est donc le bon.
+    const carburant = plan.stops.find((s) => s.necessity === 'carburant');
+    if (carburant) retenir(carburant, 'carburant', 'Ravitaillement', 0);
+    else if (!departureStation) {
+      notes.push('Aucune station atteignable avant la réserve sur cet itinéraire.');
+    }
+  } else if (departureStation) {
+    // Tout l'intérêt de s'être arrêté avant de partir.
+    notes.push('Le plein au départ couvre tout le trajet : aucun autre arrêt carburant.');
+  } else if (plan.fuelLimitKm === null) {
+    notes.push('Autonomie suffisante : aucun ravitaillement nécessaire sur ce trajet.');
+  }
+
+  // 3. Un arrêt par repas traversé, dans l'ordre du voyage.
+  for (const repas of plan.meals) {
+    const majuscule = repas.label.charAt(0).toUpperCase() + repas.label.slice(1);
+    // Le meilleur candidat peut être trop proche d'un arrêt déjà retenu. On
+    // essaie alors le suivant du classement plutôt que de renoncer au repas :
+    // renoncer laissait un dîner non proposé alors qu'une autre station du
+    // créneau convenait parfaitement.
+    const candidats = plan.stops.filter((s) => s.meal === repas.label && !pris.has(s.station.id));
+    if (!candidats.length) {
+      notes.push(`Aucune station avec restauration à l'heure du ${repas.label} sur cet itinéraire.`);
+      continue;
+    }
+    if (!candidats.some((c) => retenir(c, 'repas', majuscule))) {
+      notes.push(`${majuscule} : toutes les stations du créneau sont trop proches d'un arrêt déjà retenu.`);
+    }
+  }
+
+  // 4. Aucune portion de conduite ne doit dépasser MAX_DRIVING_STRETCH_MIN.
+  //
+  // Cette étape ne se déclenchait que si le fil était vide (`!steps.length`).
+  // Un seul ravitaillement retenu suffisait donc à supprimer toute pause du
+  // reste du trajet : 6 h 32 de route ne proposaient qu'un arrêt. Or un plein
+  // n'est pas une pause, et rouler six heures d'affilée après avoir fait le
+  // plein reste rouler six heures d'affilée.
+  //
+  // On applique la règle telle qu'on la conduit : on roule au plus la durée
+  // maximale, puis on s'arrête. Donc on avance dans le voyage, et dès qu'un
+  // intervalle entre deux arrêts la dépasse, on y place la station **la plus
+  // tardive encore acceptable** — pas celle du milieu. Couper au milieu laisse
+  // une seconde moitié aussi longue que le maximum et gaspille un arrêt.
+  if (distanceKm > 0 && durationMin > 0) {
+    /** Distance parcourue pendant la durée de conduite maximale. */
+    const portee = (MAX_DRIVING_STRETCH_MIN / durationMin) * distanceKm;
+
+    // Bornes garde-fou : le voyage ne peut pas demander plus d'arrêts que la
+    // limite, et la boucle ne doit jamais tourner sans avancer.
+    for (let garde = 0; garde < maxStops && steps.length < maxStops; garde += 1) {
+      const bornes = [
+        currentKm,
+        ...steps.map((x) => x.station.distanceKm).filter((v) => Number.isFinite(v)),
+        distanceKm,
+      ].sort((a, b) => a - b);
+
+      // Premier intervalle trop long dans l'ordre du voyage.
+      let trou = null;
+      for (let i = 0; i < bornes.length - 1; i += 1) {
+        if (bornes[i + 1] - bornes[i] > portee) {
+          trou = { de: bornes[i], a: bornes[i + 1] };
+          break;
+        }
+      }
+      if (!trou) break;
+
+      const candidat = [...plan.stops]
+        .filter(
+          (x) =>
+            !pris.has(x.station.id) &&
+            Number.isFinite(x.station.distanceKm) &&
+            x.station.distanceKm > trou.de &&
+            x.station.distanceKm <= trou.de + portee,
+        )
+        // La plus tardive d'abord : rouler jusqu'au bout de ce qui est sûr.
+        .sort((a, b) => b.station.distanceKm - a.station.distanceKm)[0];
+
+      if (!candidat || !retenir(candidat, 'confort', 'Pause', Math.min(MIN_STOP_SPACING_KM, portee / 3))) {
+        const minutes = Math.round(((trou.a - trou.de) / distanceKm) * durationMin);
+        notes.push(
+          `Aucune station bien placée pour couper une portion de ${minutes} min de conduite.`,
+        );
+        break;
+      }
+    }
+  }
+
+  const km = (s) => (Number.isFinite(s.station.distanceKm) ? s.station.distanceKm : -1);
+  steps.sort((a, b) => km(a) - km(b));
+  return { steps: steps.slice(0, maxStops), notes };
 }

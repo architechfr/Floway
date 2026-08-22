@@ -136,3 +136,90 @@
   color: #9fb2b5;
   font-size: 0.6rem;
 }
+
+/* Repères sélectionnables. L'overlay reste transparent aux évènements pour
+   que le déplacement de la carte fonctionne partout ailleurs ; seuls les
+   repères reprennent la main. */
+.clickable {
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.hit {
+  fill: transparent;
+  stroke: none;
+}
+
+.clickable:hover circle:not(.hit) {
+  stroke: #ff9a5c;
+  stroke-width: 3.5;
+}
+
+.clickable:focus {
+  outline: none;
+}
+
+.clickable:focus-visible circle:not(.hit) {
+  stroke: #ff9a5c;
+  stroke-width: 4;
+  filter: drop-shadow(0 0 6px rgba(255, 154, 92, 0.9));
+}
+
+/* --- Couche de trafic ------------------------------------------------------
+   Tuiles TomTom « relative0-dark » : la vitesse relative a la fluidite, sur
+   fond sombre. Elles se posent au-dessus du fond IGN et sous le trace, pour
+   que l'itineraire reste lisible par-dessus la couleur du trafic. */
+
+/* Pas de z-index : l'ordre du DOM suffit et il est le bon — fond IGN, puis
+   trafic, puis le trace SVG. Un z-index ferait passer le trafic au-dessus de
+   l'itineraire, qui doit rester lisible par-dessus la couleur. */
+.trafficTile {
+  opacity: 0.92;
+  pointer-events: none;
+}
+
+.trafficLegend {
+  position: absolute;
+  z-index: 4;
+  right: 10px;
+  bottom: 34px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 9px;
+  border: 1px solid #2c4c3e;
+  border-radius: 999px;
+  background: rgba(6, 18, 13, 0.88);
+  color: #b9cdc4;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.trafficLegend i {
+  width: 12px;
+  height: 4px;
+  border-radius: 2px;
+}
+
+.trafficLegend i[data-flux='libre'] { background: #35c46a; }
+.trafficLegend i[data-flux='dense'] { background: #f2b134; }
+.trafficLegend i[data-flux='bloque'] { background: #e0483d; }
+
+.trafficLegend b {
+  margin-left: 4px;
+  color: #7fe0b0;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.trafficOff {
+  color: #8fa0a5;
+}
+
+@media (max-width: 480px) {
+  .trafficLegend {
+    right: 8px;
+    bottom: 30px;
+    font-size: 9px;
+  }
+}

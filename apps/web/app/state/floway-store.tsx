@@ -37,12 +37,56 @@ const AUTO_ORIGIN_KEY = 'floway:auto-origin';
 const VEHICLE_KEY = 'floway:vehicle-profile';
 const TRIP_CONTEXT_KEY = 'floway:trip-context';
 const LAST_ORIGIN_KEY = 'floway:last-origin-gps';
+const LAST_ROUTE_KEY = 'floway:last-route';
+const SAVED_PLACES_KEY = 'floway:saved-places';
+const FAVORITE_ROUTES_KEY = 'floway:favorite-routes';
+/** Au-dela, les favoris les plus anciens sortent de la liste. */
+const MAX_FAVORITE_ROUTES = 8;
+/** Ancienne cle du layer `session-restore`, retiree en phase 1. */
+const LEGACY_SESSION_KEY = 'floway:active-session';
 
 /** Au-delà de ce délai, une position mémorisée est considérée comme périmée. */
 const POSITION_MAX_AGE_MS = 10 * 60 * 1000;
 
 export type OriginMode = 'auto' | 'manual';
 export type GeoStatus = 'idle' | 'locating' | 'ready' | 'denied' | 'unavailable';
+
+/** Dernier trajet calcule avec succes, tel qu'il repart au prochain demarrage. */
+export type LastRoute = {
+  origin: string;
+  destination: string;
+};
+
+/** Destination memorisee, proposee en raccourci dans la fenetre d'itineraire. */
+export type SavedPlace = {
+  id: string;
+  label: string;
+  /** Vide tant que l'utilisateur n'a pas renseigne l'adresse. */
+  address: string;
+  icon: string;
+  /** Les trois emplacements toujours proposes, meme vides. */
+  priority: boolean;
+};
+
+/** Toujours presents, meme sans adresse : ils invitent a la renseigner. */
+export const DEFAULT_PLACES: readonly SavedPlace[] = [
+  { id: 'home', label: 'Domicile', address: '', icon: '🏠', priority: true },
+  { id: 'work', label: 'Bureau', address: '', icon: '💼', priority: true },
+  { id: 'second-home', label: 'Maison secondaire', address: '', icon: '⭐', priority: true },
+];
+
+/** Itineraire mis de cote, rejouable en un clic. */
+export type FavoriteRoute = {
+  id: string;
+  origin: string;
+  destination: string;
+  savedAt: number;
+};
+
+/** Cle de comparaison de deux itineraires, insensible a la casse. */
+export function routeKey(origin: string, destination: string): string {
+  return `${origin.trim().toLowerCase()}::${destination.trim().toLowerCase()}`;
+}
 
 export type GeoOrigin = {
   lat: number;
@@ -109,6 +153,33 @@ type FlowayStore = {
   /** Vrai une fois que l'utilisateur a validé son véhicule au moins une fois. */
   vehicleConfirmed: boolean;
   setVehicleConfirmed: (confirmed: boolean) => void;
+
+  /** Dernier trajet calculé, ou null au tout premier lancement. */
+  lastRoute: LastRoute | null;
+  setLastRoute: (route: LastRoute) => void;
+  /**
+   * Vrai une fois la relecture du stockage local terminée.
+   *
+   * Les effets des enfants s'exécutent avant ceux du provider : un composant
+   * qui a besoin d'une valeur persistée pour son premier chargement doit
+   * attendre ce drapeau, sinon il lit un état encore vide.
+   */
+  hydrated: boolean;
+
+  /** Destinations mémorisées : les trois emplacements fixes, puis les favoris. */
+  savedPlaces: SavedPlace[];
+  /** Renseigne ou corrige l'adresse d'un emplacement existant. */
+  setPlaceAddress: (id: string, address: string) => void;
+  /** Ajoute un favori. Sans effet si le nom ou l'adresse est vide. */
+  addSavedPlace: (label: string, address: string) => void;
+  /** Retire un favori. Les trois emplacements fixes ne sont jamais retirés. */
+  removeSavedPlace: (id: string) => void;
+
+  /** Itinéraires mis de côté, du plus récent au plus ancien. */
+  favoriteRoutes: FavoriteRoute[];
+  /** Ajoute l'itinéraire s'il est absent, le retire s'il est déjà là. Rend l'état obtenu. */
+  toggleFavoriteRoute: (origin: string, destination: string) => boolean;
+  removeFavoriteRoute: (id: string) => void;
 };
 
 const FlowayStoreContext = createContext<FlowayStore | null>(null);
@@ -153,6 +224,81 @@ function readJson<T>(key: string): T | null {
   }
 }
 
+/**
+ * Relit le dernier trajet en verifiant sa forme.
+ *
+ * L'ancien layer `session-restore` memorisait le libelle *raccourci* affiche
+ * dans l'en-tete (`placeLabel`), pas le libelle complet : un depart GPS y
+ * etait ecrit « Position GPS », chaine qu'aucun geocodeur ne sait resoudre.
+ * On repart donc d'une cle neuve et on ignore ce qui reste de l'ancienne.
+ */
+function readLastRoute(): LastRoute | null {
+  const value = readJson<Partial<LastRoute>>(LAST_ROUTE_KEY);
+  const origin = typeof value?.origin === 'string' ? value.origin.trim() : '';
+  const destination = typeof value?.destination === 'string' ? value.destination.trim() : '';
+  if (!origin || !destination) return null;
+  return { origin, destination };
+}
+
+/**
+ * Relit les destinations memorisees en verifiant leur forme.
+ *
+ * Les trois emplacements fixes sont toujours presents en tete, complets de
+ * leur adresse si elle a ete renseignee ; les favoris libres suivent.
+ */
+function readSavedPlaces(): SavedPlace[] {
+  let raw: unknown = null;
+  try {
+    raw = JSON.parse(localStorage.getItem(SAVED_PLACES_KEY) || '[]');
+  } catch {
+    return DEFAULT_PLACES.map((p) => ({ ...p }));
+  }
+  if (!Array.isArray(raw)) return DEFAULT_PLACES.map((p) => ({ ...p }));
+
+  const clean = raw.flatMap((value): SavedPlace[] => {
+    const v = value as Partial<SavedPlace>;
+    if (typeof v?.id !== 'string' || !v.id.trim()) return [];
+    if (typeof v?.label !== 'string' || !v.label.trim()) return [];
+    return [{
+      id: v.id,
+      label: v.label.trim(),
+      address: typeof v.address === 'string' ? v.address.trim() : '',
+      icon: typeof v.icon === 'string' && v.icon ? v.icon : '☆',
+      priority: v.priority === true,
+    }];
+  });
+
+  const byId = new Map(clean.map((p) => [p.id, p]));
+  const fixed = DEFAULT_PLACES.map((d) => ({ ...d, address: byId.get(d.id)?.address ?? '' }));
+  const extra = clean.filter((p) => !DEFAULT_PLACES.some((d) => d.id === p.id));
+  return [...fixed, ...extra];
+}
+
+/** Relit les itineraires favoris en verifiant leur forme. */
+function readFavoriteRoutes(): FavoriteRoute[] {
+  let raw: unknown = null;
+  try {
+    raw = JSON.parse(localStorage.getItem(FAVORITE_ROUTES_KEY) || '[]');
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .flatMap((value): FavoriteRoute[] => {
+      const v = value as Partial<FavoriteRoute>;
+      const origin = typeof v?.origin === 'string' ? v.origin.trim() : '';
+      const destination = typeof v?.destination === 'string' ? v.destination.trim() : '';
+      if (!origin || !destination) return [];
+      return [{
+        id: typeof v.id === 'string' && v.id ? v.id : routeKey(origin, destination),
+        origin,
+        destination,
+        savedAt: Number.isFinite(v.savedAt) ? (v.savedAt as number) : 0,
+      }];
+    })
+    .slice(0, MAX_FAVORITE_ROUTES);
+}
+
 /** Nombre borné, avec repli sur une valeur par défaut si l'entrée est invalide. */
 function numberOr(value: unknown, fallback: number, min: number, max: number): number {
   return typeof value === 'number' && Number.isFinite(value)
@@ -177,6 +323,10 @@ export function FlowayStoreProvider({ children }: { children: ReactNode }) {
   const [vehicle, setVehicleState] = useState<VehicleProfile | null>(null);
   const [trip, setTripState] = useState<TripContext>(DEFAULT_TRIP_CONTEXT);
   const [vehicleConfirmed, setVehicleConfirmedState] = useState(false);
+  const [lastRoute, setLastRouteState] = useState<LastRoute | null>(null);
+  const [hydrated, setHydrated] = useState(false);
+  const [savedPlaces, setSavedPlacesState] = useState<SavedPlace[]>(() => DEFAULT_PLACES.map((p) => ({ ...p })));
+  const [favoriteRoutes, setFavoriteRoutesState] = useState<FavoriteRoute[]>([]);
   const locateInFlight = useRef(false);
 
   // Hydratation depuis le stockage local, après le montage uniquement :
@@ -215,6 +365,87 @@ export function FlowayStoreProvider({ children }: { children: ReactNode }) {
         meal: storedTrip.meal === 'oui' || storedTrip.meal === 'non' ? storedTrip.meal : 'auto',
       });
     }
+
+    setLastRouteState(readLastRoute());
+    setSavedPlacesState(readSavedPlaces());
+    setFavoriteRoutesState(readFavoriteRoutes());
+    try {
+      localStorage.removeItem(LEGACY_SESSION_KEY);
+    } catch {
+      // Stockage indisponible : rien a nettoyer.
+    }
+
+    // En dernier : les composants qui attendent ce drapeau lisent alors un
+    // etat complet, pas une hydratation a moitie faite.
+    setHydrated(true);
+  }, []);
+
+  const setPlaceAddress = useCallback((id: string, address: string) => {
+    setSavedPlacesState((current) => {
+      const next = current.map((p) => (p.id === id ? { ...p, address: address.trim() } : p));
+      writeStorage(SAVED_PLACES_KEY, JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const addSavedPlace = useCallback((label: string, address: string) => {
+    const name = label.trim();
+    const where = address.trim();
+    if (!name || !where) return;
+    setSavedPlacesState((current) => {
+      const next = [...current, { id: `fav-${Date.now()}`, label: name, address: where, icon: '☆', priority: false }];
+      writeStorage(SAVED_PLACES_KEY, JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const removeSavedPlace = useCallback((id: string) => {
+    setSavedPlacesState((current) => {
+      const next = current.filter((p) => p.id !== id || p.priority);
+      writeStorage(SAVED_PLACES_KEY, JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  /**
+   * Bascule d'un itineraire en favori.
+   *
+   * Rend l'etat obtenu — ajoute (`true`) ou retire (`false`) — pour que
+   * l'appelant formule son message sans avoir a relire la liste.
+   */
+  const toggleFavoriteRoute = useCallback((origin: string, destination: string) => {
+    const from = origin.trim();
+    const to = destination.trim();
+    if (!from || !to) return false;
+    const key = routeKey(from, to);
+    let added = false;
+    setFavoriteRoutesState((current) => {
+      const existing = current.find((r) => routeKey(r.origin, r.destination) === key);
+      const next = existing
+        ? current.filter((r) => r.id !== existing.id)
+        : [{ id: key, origin: from, destination: to, savedAt: Date.now() }, ...current].slice(0, MAX_FAVORITE_ROUTES);
+      added = !existing;
+      writeStorage(FAVORITE_ROUTES_KEY, JSON.stringify(next));
+      return next;
+    });
+    return added;
+  }, []);
+
+  const removeFavoriteRoute = useCallback((id: string) => {
+    setFavoriteRoutesState((current) => {
+      const next = current.filter((r) => r.id !== id);
+      writeStorage(FAVORITE_ROUTES_KEY, JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const setLastRoute = useCallback((route: LastRoute) => {
+    const origin = route.origin.trim();
+    const destination = route.destination.trim();
+    if (!origin || !destination) return;
+    const next = { origin, destination };
+    setLastRouteState(next);
+    writeStorage(LAST_ROUTE_KEY, JSON.stringify(next));
   }, []);
 
   const setVehicle = useCallback((profile: VehicleProfile | null) => {
@@ -308,10 +539,16 @@ export function FlowayStoreProvider({ children }: { children: ReactNode }) {
     () => ({
       originMode, setOriginMode, geoOrigin, geoOriginIsFresh, geoStatus, geoMessage, locate,
       vehicle, setVehicle, trip, setTrip, vehicleConfirmed, setVehicleConfirmed,
+      lastRoute, setLastRoute, hydrated,
+      savedPlaces, setPlaceAddress, addSavedPlace, removeSavedPlace,
+      favoriteRoutes, toggleFavoriteRoute, removeFavoriteRoute,
     }),
     [
       originMode, setOriginMode, geoOrigin, geoOriginIsFresh, geoStatus, geoMessage, locate,
       vehicle, setVehicle, trip, setTrip, vehicleConfirmed, setVehicleConfirmed,
+      lastRoute, setLastRoute, hydrated,
+      savedPlaces, setPlaceAddress, addSavedPlace, removeSavedPlace,
+      favoriteRoutes, toggleFavoriteRoute, removeFavoriteRoute,
     ],
   );
 

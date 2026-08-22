@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { arrivalAtKm, mealsDuringTrip, rankStops } from './stop-planner.mjs';
+import { arrivalAtKm, buildJourney, mealsDuringTrip, rankStops, waitLevel, MAX_DRIVING_STRETCH_MIN, MIN_STOP_SPACING_KM } from './stop-planner.mjs';
 import { planEnergy } from './energy-model.mjs';
 import { formatTimeInZone, instantFromLocalInput } from './trip-clock.mjs';
 
@@ -199,4 +199,244 @@ test('plus de deux passagers : les services de confort comptent', () => {
 test('aucune station devant : le planificateur ne casse pas', () => {
   const r = rankStops({ stations: [], departureAt: dep('09:00'), durationMin: 100, distanceKm: 200 });
   assert.deepEqual(r.stops, []);
+});
+
+// --- fil du voyage ---------------------------------------------------------
+
+const trajet = (stations, { depart = '09:00', duree = 300, distance = 500, energie = null, contexte = {} } = {}) =>
+  rankStops({
+    stations,
+    departureAt: dep(depart),
+    durationMin: duree,
+    distanceKm: distance,
+    energyPlan: energie,
+    context: contexte,
+  });
+
+test('le plein fait : aucun arrêt carburant proposé, et l’absence est expliquée', () => {
+  // 60 L à 5 L/100 = 1200 km d'autonomie pour 500 km de trajet.
+  const energie = planEnergy({ capacity: 60, consumption: 5, levelPct: 100, distanceKm: 500 });
+  assert.equal(energie.firstStopAtKm, null, 'le plein couvre le trajet');
+  const plan = trajet([station('a', 131), station('b', 300)], { energie });
+  const { steps, notes } = buildJourney({ plan, distanceKm: 500, durationMin: 300 });
+  assert.equal(steps.filter((s) => s.kind === 'carburant').length, 0);
+  assert.ok(notes.some((n) => /Autonomie suffisante/.test(n)), notes.join(' | '));
+});
+
+test('réservoir insuffisant : un seul ravitaillement, au plus tard avant la réserve', () => {
+  // 40 L à 8 L/100 à 50 % = 250 km, réserve 10 % → environ 210 km exploitables.
+  const energie = planEnergy({ capacity: 40, consumption: 8, levelPct: 50, distanceKm: 500 });
+  assert.ok(energie.firstStopAtKm > 0, 'un ravitaillement est bien nécessaire');
+  const plan = trajet([station('proche', 60), station('juste', 200), station('trop-loin', 480)], { energie });
+  const { steps } = buildJourney({ plan, distanceKm: 500, durationMin: 300 });
+  const carburant = steps.filter((s) => s.kind === 'carburant');
+  assert.equal(carburant.length, 1);
+  assert.equal(carburant[0].station.id, 'juste', 'le plus proche de la limite, pas le premier venu');
+});
+
+test('un départ à 11 h fait proposer un déjeuner, servi par une station qui restaure', () => {
+  const stations = [
+    station('sans-resto', 120),
+    station('resto', 150, { services: ['Carburant', 'Restauration'] }),
+  ];
+  const plan = trajet(stations, { depart: '11:00', duree: 300, distance: 500 });
+  const { steps } = buildJourney({ plan, distanceKm: 500, durationMin: 300 });
+  const repas = steps.filter((s) => s.kind === 'repas');
+  assert.equal(repas.length, 1);
+  assert.equal(repas[0].station.id, 'resto');
+  assert.equal(repas[0].label, 'Déjeuner');
+});
+
+test('aucun repas traversé : rien n’est inventé', () => {
+  // Départ 15 h, 2 h de route : ni déjeuner ni dîner.
+  const plan = trajet([station('a', 60, { services: ['Carburant', 'Restauration'] })], {
+    depart: '15:00', duree: 120, distance: 200,
+  });
+  const { steps } = buildJourney({ plan, distanceKm: 200, durationMin: 120 });
+  assert.equal(steps.filter((s) => s.kind === 'repas').length, 0);
+});
+
+test('les arrêts retenus ne se suivent pas de trop près', () => {
+  const energie = planEnergy({ capacity: 40, consumption: 8, levelPct: 50, distanceKm: 500 });
+  const stations = [
+    station('a', 190, { services: ['Carburant', 'Restauration'] }),
+    station('b', 200, { services: ['Carburant', 'Restauration'] }),
+  ];
+  const plan = trajet(stations, { depart: '11:00', duree: 300, distance: 500, energie });
+  const { steps } = buildJourney({ plan, distanceKm: 500, durationMin: 300 });
+  const ecarts = steps.slice(1).map((s, i) => s.station.distanceKm - steps[i].station.distanceKm);
+  assert.ok(ecarts.every((e) => e >= MIN_STOP_SPACING_KM), `écarts : ${ecarts.join(', ')}`);
+});
+
+/** Durée de conduite du plus long tronçon sans arrêt, en minutes. */
+const plusLongTroncon = (steps, distanceKm, durationMin, currentKm = 0) => {
+  const bornes = [currentKm, ...steps.map((s) => s.station.distanceKm).filter(Number.isFinite), distanceKm]
+    .sort((a, b) => a - b);
+  let pire = 0;
+  for (let i = 0; i < bornes.length - 1; i += 1) {
+    pire = Math.max(pire, ((bornes[i + 1] - bornes[i]) / distanceKm) * durationMin);
+  }
+  return pire;
+};
+
+test('longue route sans repas ni carburant : une pause de confort à mi-parcours', () => {
+  const plan = trajet([station('debut', 40), station('milieu', 240), station('fin', 460)], {
+    depart: '15:00', duree: 300, distance: 500,
+  });
+  const { steps } = buildJourney({ plan, distanceKm: 500, durationMin: 300 });
+  assert.ok(steps.length >= 1, 'au moins une pause');
+  assert.ok(steps.every((s) => s.kind === 'confort'), steps.map((s) => s.kind).join(','));
+  assert.equal(steps[0].station.id, 'milieu');
+  assert.ok(
+    plusLongTroncon(steps, 500, 300) <= MAX_DRIVING_STRETCH_MIN,
+    `tronçon le plus long : ${plusLongTroncon(steps, 500, 300).toFixed(0)} min`,
+  );
+});
+
+test('un ravitaillement ne supprime plus les pauses du reste du trajet', () => {
+  // Le cas constate : 750 km, 6 h 32, reservoir a 10 %. Le fil n'affichait
+  // qu'une seule etape — le plein — et laissait 742 km sans rien.
+  const stations = [];
+  for (let km = 20; km < 750; km += 40) stations.push(station(`s${km}`, km, { services: ['Carburant', 'Restauration'] }));
+  // 40 % de 1000 km d'autonomie : un ravitaillement est necessaire, mais on
+  // peut encore rouler — ce n'est pas le cas d'urgence, teste juste apres.
+  const energie = planEnergy({ capacity: 60, consumption: 6, levelPct: 40, distanceKm: 750 });
+  const plan = trajet(stations, { depart: '20:52', duree: 392, distance: 750, energie });
+  const { steps } = buildJourney({ plan, distanceKm: 750, durationMin: 392 });
+  assert.ok(steps.length > 1, `un seul arret sur 750 km : ${steps.map((s) => s.label).join(' | ')}`);
+  assert.ok(steps.some((s) => s.kind === 'carburant'), 'le ravitaillement reste propose');
+  assert.ok(
+    plusLongTroncon(steps, 750, 392) <= MAX_DRIVING_STRETCH_MIN,
+    `tronçon le plus long : ${plusLongTroncon(steps, 750, 392).toFixed(0)} min`,
+  );
+});
+
+test('carburant urgent : le plein ouvre le fil, il ne le remplace pas', () => {
+  const stations = [];
+  for (let km = 8; km < 750; km += 45) stations.push(station(`s${km}`, km, { services: ['Carburant', 'Restauration'] }));
+  const plan = trajet(stations, { depart: '20:52', duree: 392, distance: 750 });
+  const urgente = { id: 'urgente', distanceKm: 8, name: 'Émerainville' };
+  const { steps } = buildJourney({ plan, distanceKm: 750, durationMin: 392, urgentStation: urgente });
+  assert.equal(steps[0].station.id, 'urgente');
+  assert.equal(steps[0].label, 'Carburant urgent');
+  assert.ok(steps.length > 1, `le fil s'arrete au plein : ${steps.map((s) => s.label).join(' | ')}`);
+  // Un depart a 20 h 52 traverse le diner : il doit rester propose.
+  assert.ok(steps.some((s) => s.kind === 'repas'), steps.map((s) => `${s.kind}:${s.label}`).join(' | '));
+  assert.ok(
+    plusLongTroncon(steps, 750, 392) <= MAX_DRIVING_STRETCH_MIN,
+    `tronçon le plus long : ${plusLongTroncon(steps, 750, 392).toFixed(0)} min`,
+  );
+});
+
+test('trajet court : aucune pause imposée', () => {
+  const plan = trajet([station('a', 30)], { depart: '15:00', duree: 60, distance: 80 });
+  const { steps } = buildJourney({ plan, distanceKm: 80, durationMin: 60 });
+  assert.equal(steps.length, 0);
+});
+
+// --- plein avant de partir -------------------------------------------------
+
+const stationDepart = { id: 'depart', detourKm: 2.4, name: 'Station du coin', price: 1.71 };
+
+test('réservoir bas : le plein se fait avant de partir, pas 200 km plus loin', () => {
+  const energie = planEnergy({ capacity: 40, consumption: 8, levelPct: 50, distanceKm: 500 });
+  const plan = trajet([station('sur-la-route', 200)], { energie });
+  const { steps } = buildJourney({
+    plan, distanceKm: 500, durationMin: 300,
+    departureStation: stationDepart,
+  });
+  assert.equal(steps[0].label, 'Plein avant de partir');
+  assert.equal(steps[0].station.id, 'depart');
+  assert.ok(steps[0].reasons.some((r) => /2\.4 km du départ/.test(r)), steps[0].reasons.join(' | '));
+});
+
+test('si le plein au départ couvre le trajet, aucun autre arrêt carburant', () => {
+  // A 20 % il faut ravitailler ; c'est ce qui declenche la recherche au depart.
+  const bas = planEnergy({ capacity: 60, consumption: 5, levelPct: 20, distanceKm: 500 });
+  assert.ok(bas.firstStopAtKm > 0, 'à 20 % il faut bien ravitailler');
+  // Une fois le plein fait, la suite du trajet se planifie reservoir plein :
+  // 60 L a 5 L/100 = 1200 km, les 500 km passent sans autre arret.
+  const apresPlein = planEnergy({ capacity: 60, consumption: 5, levelPct: 100, distanceKm: 500 });
+  assert.equal(apresPlein.firstStopAtKm, null);
+  const plan = trajet([station('sur-la-route', 150)], { energie: apresPlein });
+  const { steps, notes } = buildJourney({
+    plan, distanceKm: 500, durationMin: 300, departureStation: stationDepart,
+  });
+  assert.equal(steps.filter((s) => s.kind === 'carburant').length, 1);
+  assert.equal(steps[0].label, 'Plein avant de partir');
+  assert.ok(notes.some((n) => /couvre tout le trajet/.test(n)), notes.join(' | '));
+});
+
+test('la station de départ n’empêche pas un arrêt proche sur la route', () => {
+  const apresPlein = planEnergy({ capacity: 60, consumption: 5, levelPct: 100, distanceKm: 500 });
+  const plan = trajet([station('tot', 80, { services: ['Carburant', 'Restauration'] })], {
+    depart: '11:00', duree: 300, distance: 500, energie: apresPlein,
+  });
+  const { steps } = buildJourney({
+    plan, distanceKm: 500, durationMin: 300, departureStation: stationDepart,
+  });
+  // Un déjeuner à 80 km reste proposé, alors que 80 < MIN_STOP_SPACING_KM :
+  // la station de départ n'est pas sur l'itinéraire, elle ne compte pas dans
+  // l'espacement.
+  assert.ok(80 < MIN_STOP_SPACING_KM && steps.some((s) => s.kind === 'repas' && s.station.id === 'tot'), steps.map((s) => s.label).join(' | '));
+});
+
+test('sans station trouvée près du départ, on retombe sur l’arrêt en route', () => {
+  const energie = planEnergy({ capacity: 40, consumption: 8, levelPct: 50, distanceKm: 500 });
+  const plan = trajet([station('sur-la-route', 200)], { energie });
+  const { steps } = buildJourney({ plan, distanceKm: 500, durationMin: 300, departureStation: null });
+  assert.equal(steps.filter((s) => s.kind === 'carburant').length, 1);
+  assert.equal(steps[0].label, 'Ravitaillement');
+});
+
+// --- affluence dans le classement -------------------------------------------
+
+test('affluence : trois niveaux, et rien d’inventé sans estimation', () => {
+  assert.equal(waitLevel(2).id, 'faible');
+  assert.equal(waitLevel(4).id, 'faible');
+  assert.equal(waitLevel(5).id, 'moderee');
+  assert.equal(waitLevel(7).id, 'moderee');
+  assert.equal(waitLevel(8).id, 'forte');
+  assert.equal(waitLevel(undefined), null);
+  assert.equal(waitLevel(null), null);
+  assert.equal(waitLevel(Number.NaN), null);
+});
+
+test('à égalité par ailleurs, la station la moins fréquentée passe devant', () => {
+  const calme = station('calme', 200, { waitMin: 2 });
+  const bondee = station('bondee', 210, { waitMin: 12 });
+  const plan = trajet([bondee, calme]);
+  assert.equal(plan.stops[0].station.id, 'calme');
+  // Le classement doit pouvoir se justifier : le niveau est rendu avec lui.
+  assert.equal(plan.stops[0].waitLevel.id, 'faible');
+  assert.equal(plan.stops.find((s) => s.station.id === 'bondee').waitLevel.id, 'forte');
+});
+
+test('l’affluence n’est citée que si la station se détache du lot', () => {
+  const plan = trajet([
+    station('calme', 200, { waitMin: 2 }),
+    station('moyenne', 260, { waitMin: 7 }),
+    station('bondee', 320, { waitMin: 12 }),
+  ]);
+  const raisons = (id) => plan.stops.find((s) => s.station.id === id).reasons.join(' | ');
+  assert.match(raisons('calme'), /affluence prévue faible/);
+  assert.match(raisons('bondee'), /affluence prévue forte/);
+  assert.doesNotMatch(raisons('moyenne'), /affluence/);
+});
+
+test('une seule station : aucune comparaison d’affluence n’est affirmée', () => {
+  const plan = trajet([station('seule', 200, { waitMin: 12 })]);
+  assert.doesNotMatch(plan.stops[0].reasons.join(' | '), /affluence/);
+  // Le niveau reste disponible, il n'est simplement pas présenté comme un argument.
+  assert.equal(plan.stops[0].waitLevel.id, 'forte');
+});
+
+test('le carburant nécessaire pèse plus lourd qu’une affluence faible', () => {
+  // 40 L a 8 L/100 avec 60 % : 250 km avant la reserve.
+  const energie = planEnergy({ capacity: 40, consumption: 8, levelPct: 60, distanceKm: 500 });
+  const utile = station('utile', 240, { waitMin: 12 });
+  const calmeInutile = station('trop-loin', 460, { waitMin: 2 });
+  const plan = trajet([calmeInutile, utile], { energie });
+  assert.equal(plan.fuelLimitKm, 250);
+  assert.equal(plan.stops[0].station.id, 'utile');
 });

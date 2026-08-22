@@ -1,0 +1,42 @@
+/*
+ * Actions rapides sous le titre d'itineraire : inverser, mettre en favori.
+ *
+ * Reprises de `interactions.css`. La marge negative d'origine (`-6px`) datait
+ * de l'injection apres coup du bloc dans le DOM ; le composant etant desormais
+ * pose dans le flux, elle n'a plus lieu d'etre — c'est elle qui faisait
+ * chevaucher les deux boutons avec le bandeau de trajet sur l'accueil.
+ */
+
+.actions {
+  display: flex;
+  gap: 8px;
+  margin: 10px 0 4px;
+  flex-wrap: wrap;
+}
+
+.actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 11px;
+  border: 1px solid #2f4945;
+  border-radius: 999px;
+  background: rgba(4, 16, 18, 0.78);
+  color: #d9e3df;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+}
+
+.actions button:disabled { opacity: 0.5; cursor: default; }
+
+.reverse { border-color: rgba(255, 126, 56, 0.42) !important; color: #ffab72 !important; }
+.favorite { border-color: rgba(91, 213, 139, 0.38) !important; color: #8ce8ae !important; }
+.favorite.on { background: rgba(91, 213, 139, 0.14) !important; }
+
+.actions button:focus-visible { outline: 2px solid #8ce8ae; outline-offset: 2px; }
+
+@media (max-width: 520px) {
+  .actions button { flex: 1; justify-content: center; min-height: 38px; }
+}

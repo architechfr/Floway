@@ -38,6 +38,21 @@ type LayerId = keyof typeof LAYERS;
 const tileUrl = (layer: LayerId, x: number, y: number, z: number) =>
   `${WMTS}&LAYER=${LAYERS[layer].layer}&FORMAT=${LAYERS[layer].format}&TILEMATRIX=${z}&TILEROW=${y}&TILECOL=${x}`;
 
+/**
+ * Tuile de trafic, servie par notre relais.
+ *
+ * L'URL TomTom porte la clé d'API : elle ne peut pas figurer dans le `src`
+ * d'une image. `/api/traffic-tiles` la garde côté serveur.
+ */
+const trafficTileUrl = (x: number, y: number, z: number) => `/api/traffic-tiles/${z}/${x}/${y}`;
+
+/**
+ * Zoom en deçà duquel la couche de trafic n'apporte rien : à l'échelle d'un
+ * trajet Paris–Marseille, les axes se superposent et la couleur devient
+ * illisible. On la propose, mais on dit pourquoi elle ne s'affiche pas.
+ */
+const ZOOM_TRAFIC_MIN = 6;
+
 export type MapStop = {
   id: string;
   lat?: number;
@@ -54,15 +69,26 @@ type Props = {
   stops?: MapStop[];
   live?: { lat: number; lon: number } | null;
   height?: number;
+  /** Appele quand un repere est active, au clic ou au clavier. */
+  onSelectStop?: (id: string) => void;
 };
 
-export default function RouteMap({ geometry, stops = [], live = null, height = 280 }: Props) {
+export default function RouteMap({ geometry, stops = [], live = null, height = 280, onSelectStop }: Props) {
   const frame = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 0, height });
   const [layer, setLayer] = useState<LayerId>('plan');
+  // Couche de trafic : demandée par l'utilisateur, donc jamais imposée.
+  const [trafic, setTrafic] = useState(false);
+  // Le relais répond 503 sans clé TomTom. On l'affiche au lieu de laisser un
+  // calque muet laisser croire à une route déserte.
+  const [traficIndisponible, setTraficIndisponible] = useState(false);
   const [view, setView] = useState<MapView | null>(null);
   const [moved, setMoved] = useState(false);
-  const drag = useRef<{ x: number; y: number } | null>(null);
+  // `capture` : la capture du pointeur n'est prise qu'au premier mouvement
+  // reel. Prise des `pointerdown`, elle detournait le `click` vers le cadre et
+  // aucun bouton de la carte ne repondait — plan, vue aerienne, zoom, recadrer,
+  // trafic. Les reperes y echappaient seuls, par `stopPropagation`.
+  const drag = useRef<{ x: number; y: number; id: number; capture: boolean } | null>(null);
 
   // La largeur n'est connue qu'après le montage : on la mesure et on la suit.
   useEffect(() => {
@@ -130,23 +156,35 @@ export default function RouteMap({ geometry, stops = [], live = null, height = 2
         ref={frame}
         className={styles.frame}
         onPointerDown={(e) => {
-          drag.current = { x: e.clientX, y: e.clientY };
-          e.currentTarget.setPointerCapture(e.pointerId);
+          drag.current = { x: e.clientX, y: e.clientY, id: e.pointerId, capture: false };
         }}
         onPointerMove={(e) => {
           if (!drag.current || !view) return;
           const dx = e.clientX - drag.current.x;
           const dy = e.clientY - drag.current.y;
           if (Math.abs(dx) + Math.abs(dy) < 2) return;
-          drag.current = { x: e.clientX, y: e.clientY };
+          // Deplacement avere : on prend la main sur le pointeur pour suivre le
+          // doigt hors du cadre, mais pas avant — sinon un simple appui devient
+          // un glissement et le clic n'atteint jamais sa cible.
+          if (!drag.current.capture) {
+            e.currentTarget.setPointerCapture(e.pointerId);
+            drag.current.capture = true;
+          }
+          drag.current.x = e.clientX;
+          drag.current.y = e.clientY;
           setView((v) => (v ? panView(v, dx, dy) : v));
           setMoved(true);
         }}
         onPointerUp={(e) => {
+          if (drag.current?.capture && e.currentTarget.hasPointerCapture(e.pointerId)) {
+            e.currentTarget.releasePointerCapture(e.pointerId);
+          }
           drag.current = null;
-          e.currentTarget.releasePointerCapture(e.pointerId);
         }}
-        onPointerCancel={() => {
+        onPointerCancel={(e) => {
+          if (drag.current?.capture && e.currentTarget.hasPointerCapture(e.pointerId)) {
+            e.currentTarget.releasePointerCapture(e.pointerId);
+          }
           drag.current = null;
         }}
       >
@@ -162,18 +200,65 @@ export default function RouteMap({ geometry, stops = [], live = null, height = 2
           />
         ))}
 
+        {trafic &&
+          !traficIndisponible &&
+          view &&
+          view.zoom >= ZOOM_TRAFIC_MIN &&
+          tiles.map((t) => (
+            <img
+              key={`trafic-${t.z}/${t.x}/${t.y}`}
+              className={`${styles.tile} ${styles.trafficTile}`}
+              src={trafficTileUrl(t.x, t.y, t.z)}
+              style={{ left: t.left, top: t.top }}
+              alt=""
+              draggable={false}
+              onError={() => setTraficIndisponible(true)}
+            />
+          ))}
+
         {view && size.width > 0 && (
-          <svg className={styles.overlay} width={size.width} height={size.height} aria-hidden="true">
-            <path className={styles.halo} d={line} />
-            <path className={styles.line} d={line} />
+          <svg
+            className={styles.overlay}
+            width={size.width}
+            height={size.height}
+            role={onSelectStop ? 'group' : 'presentation'}
+            aria-label={onSelectStop ? 'Arrêts sur l’itinéraire' : undefined}
+            aria-hidden={onSelectStop ? undefined : true}
+          >
+            <path className={styles.halo} d={line} aria-hidden="true" />
+            <path className={styles.line} d={line} aria-hidden="true" />
             {start && <circle className={styles.start} cx={start.x} cy={start.y} r={6} />}
             {end && <circle className={styles.end} cx={end.x} cy={end.y} r={6} />}
-            {placed.map(({ stop, at }) => (
-              <g key={stop.id} className={styles.stop} data-kind={stop.kind || 'confort'}>
-                <circle cx={at.x} cy={at.y} r={7} />
-                {stop.highway && <rect x={at.x - 9} y={at.y - 15} width={18} height={10} rx={2} />}
-              </g>
-            ))}
+            {placed.map(({ stop, at }) => {
+              const actionnable = Boolean(onSelectStop);
+              const activer = () => onSelectStop?.(stop.id);
+              return (
+                <g
+                  key={stop.id}
+                  className={`${styles.stop} ${actionnable ? styles.clickable : ''}`}
+                  data-kind={stop.kind || 'confort'}
+                  role={actionnable ? 'button' : undefined}
+                  tabIndex={actionnable ? 0 : undefined}
+                  aria-label={actionnable ? `Voir ${stop.label}` : undefined}
+                  onClick={actionnable ? activer : undefined}
+                  // Sans cela, appuyer sur un repere demarre un deplacement de
+                  // la carte et le clic se perd.
+                  onPointerDown={actionnable ? (e) => e.stopPropagation() : undefined}
+                  onKeyDown={
+                    actionnable
+                      ? (e) => {
+                          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activer(); }
+                        }
+                      : undefined
+                  }
+                >
+                  {/* Cible tactile confortable : le repere visible fait 14 px. */}
+                  {actionnable && <circle className={styles.hit} cx={at.x} cy={at.y} r={18} />}
+                  <circle cx={at.x} cy={at.y} r={7} />
+                  {stop.highway && <rect x={at.x - 9} y={at.y - 15} width={18} height={10} rx={2} />}
+                </g>
+              );
+            })}
             {livePoint && (
               <>
                 <circle className={styles.livePulse} cx={livePoint.x} cy={livePoint.y} r={13} />
@@ -208,9 +293,36 @@ export default function RouteMap({ geometry, stops = [], live = null, height = 2
               {LAYERS[id].label}
             </button>
           ))}
+          <button
+            type="button"
+            className={trafic && !traficIndisponible ? styles.layerOn : undefined}
+            aria-pressed={trafic}
+            onClick={() => setTrafic((v) => !v)}
+          >
+            Trafic
+          </button>
         </div>
 
-        <small className={styles.credit}>© IGN — Géoplateforme</small>
+        {trafic && (
+          <div className={styles.trafficLegend}>
+            {traficIndisponible ? (
+              <span className={styles.trafficOff}>Trafic non connecté</span>
+            ) : view && view.zoom < ZOOM_TRAFIC_MIN ? (
+              <span className={styles.trafficOff}>Zoomez pour afficher le trafic</span>
+            ) : (
+              <>
+                <i data-flux="libre" /> fluide
+                <i data-flux="dense" /> dense
+                <i data-flux="bloque" /> bloqué
+                <b>TomTom · temps réel</b>
+              </>
+            )}
+          </div>
+        )}
+
+        <small className={styles.credit}>
+          © IGN — Géoplateforme{trafic && !traficIndisponible ? ' · trafic © TomTom' : ''}
+        </small>
       </div>
     </div>
   );

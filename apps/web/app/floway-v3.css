@@ -63,3 +63,133 @@
   border-radius: 22px;
   background: rgb(255 255 255 / 3%);
 }
+
+/* Declencheur de la feuille « corriger le niveau de carburant ». Un bouton
+   transparent : il rend la zone cliquable au clavier sans changer le rendu,
+   les regles .v3fuelHero strong et .roadFuel span s'appliquant a travers lui. */
+.fuelQuickTrigger{appearance:none;padding:0;border:0;background:none;color:inherit;font:inherit;line-height:inherit;text-align:inherit;cursor:pointer}
+.fuelQuickTrigger:focus-visible{outline:2px solid #ff8f52;outline-offset:3px;border-radius:8px}
+
+/* ---------------------------------------------------------------
+   Calage sur la reference visuelle Floway.
+   Anciennement `dynamic-reference.css`, une 25e feuille chargee apres
+   celle-ci et qui reecrivait ces memes regles a coups de !important —
+   132 au total. Fusionnee ici : a specificite egale, la regle la plus
+   basse dans le fichier l'emporte, le !important devient inutile.
+   --------------------------------------------------------------- */
+.v3app{max-width:1120px;padding:0 20px 110px;background:radial-gradient(circle at 70% 10%,rgba(24,92,80,.14),transparent 30%),#03090c}
+.v3topgrid{display:block}
+.v3hero{min-height:520px;border-radius:24px;margin-top:14px;background-position:center 46%}
+.v3heroContent{padding:36px 36px 200px;max-width:760px}
+.v3hero h1{font-size:clamp(44px,6vw,68px);max-width:570px;margin-bottom:24px}
+.v3routeTitle{display:flex;align-items:center;justify-content:space-between;gap:18px;width:min(520px,100%);padding:16px 20px;border:1px solid #294047;border-radius:16px;background:rgba(3,13,17,.72);text-align:left}
+.v3routeTitle:after{content:'›';margin-left:auto;color:#dfe7e5;font-size:30px;font-weight:400}
+.v3heroMetrics{grid-template-columns:repeat(4,1fr);max-width:100%;margin-top:22px}
+.v3heroMetrics:after{content:'⛽  ' attr(data-fuel);display:none}
+.v3miniRoute{left:34px;right:34px;bottom:24px;padding:15px 18px 13px}
+
+.v3feed{margin-top:18px;min-height:0;padding:24px}
+.v3vertical{min-height:0;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;padding:30px 0 0}
+.v3line{left:2%;right:2%;top:18px;bottom:auto;width:auto;height:4px}
+.v3end{display:none}
+.v3feedStop{display:grid;justify-items:center;align-content:start;gap:5px;margin:0;padding:34px 8px 10px;text-align:center;min-height:155px}
+.v3feedStop>span{left:50%;top:-18px;transform:translateX(-50%);width:42px;height:42px}
+.v3feedStop div{justify-items:center}
+.v3feedStop em{margin:3px 0 0}
+.v3feedStop.recommended{background:rgba(9,32,25,.72)}
+.v3midgrid{grid-template-columns:1.2fr .8fr}
+.v3recommend{border-color:#254147}
+.v3planner{border:1px solid #20373d;border-radius:22px;background:#071116}
+.v3featuregrid{grid-template-columns:repeat(2,1fr)}
+.v3stations{border-radius:22px}
+
+@media(max-width:760px){
+  .v3app{padding:0 12px 96px}
+  .v3top{height:72px}
+  .v3brand strong{font-size:28px}
+  .v3hero{min-height:690px}
+  .v3heroContent{padding:26px 22px 210px}
+  .v3hero h1{font-size:46px}
+  .v3heroMetrics{grid-template-columns:1fr 1fr;max-width:100%}
+  .v3miniRoute{left:18px;right:18px;bottom:18px}
+  .v3feed{padding:20px 14px}
+  .v3vertical{grid-template-columns:repeat(5,150px);overflow-x:auto;padding:32px 8px 8px;scroll-snap-type:x proximity}
+  .v3feedStop{scroll-snap-align:start}
+  .v3line{right:auto;width:740px}
+  .v3midgrid{grid-template-columns:1fr}
+  .v3featuregrid{grid-template-columns:1fr 1fr}
+  .v3nav{bottom:8px}
+  .v3panelHead h2{font-size:23px}
+}
+
+@media(max-width:430px){
+  .v3hero{min-height:720px}
+  .v3hero h1{font-size:42px}
+  .v3routeTitle{font-size:20px}
+  .v3featuregrid{grid-template-columns:1fr}
+}
+
+/* Ce que le planificateur n'a délibérément pas proposé — autonomie suffisante,
+   aucune station ouverte à l'heure du repas. Sans cela, l'absence d'arrêt se
+   lit comme un oubli de l'application. */
+.v3journeyNotes{margin-top:14px;display:grid;gap:6px}
+.v3journeyNotes p{margin:0;padding:9px 11px;border:1px dashed #2f4b43;border-radius:10px;background:rgba(8,22,18,.6);color:#93a9a1;font-size:10px;line-height:1.45}
+
+/* --- Classement des stations ---------------------------------------------
+   La liste suivait le point kilometrique : le classement Floway — carburant
+   necessaire, heure de passage, horaires, prix, detour, affluence — n'avait
+   aucun effet visible. L'ordre est desormais celui du classement, et le rang
+   est affiche a la place de l'icone de service pour que le tri se voie. */
+
+.v3app .v3panelHead {
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.v3app .v3panelHead > div:first-child {
+  margin-right: auto;
+}
+
+.v3app .v3rank {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #164031;
+  color: #7fe0b0;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+/* Pourquoi ce rang : le classement doit pouvoir se justifier a l'utilisateur,
+   sinon un ordre non explique vaut un ordre arbitraire. */
+.v3app .rankWhy {
+  margin: 0 0 18px;
+  padding: 14px 16px;
+  border: 1px solid #284249;
+  border-radius: 14px;
+  background: #061014;
+}
+
+.v3app .rankWhy strong {
+  display: block;
+  margin-bottom: 6px;
+  color: #7fe0b0;
+  font-size: 0.85rem;
+}
+
+.v3app .rankWhy ul {
+  margin: 0;
+  padding-left: 18px;
+  color: #cbd5d3;
+  font-size: 0.8rem;
+  line-height: 1.7;
+}
+
+.v3app .rankWhy p {
+  margin: 0;
+  color: #8fa0a5;
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
